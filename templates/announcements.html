@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}公告栏 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>公告栏</h4>
+                <small class="text-muted">查看最新公告和通知</small>
+            </div>
+            <div class="card-body" id="announcementsList">
+                <p class="text-muted text-center">加载中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 公告详情模态框 -->
+<div class="modal fade" id="announcementModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">公告详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalContent">
+                <!-- 公告内容将在这里显示 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAnnouncements();
+});
+
+function loadAnnouncements() {
+    fetch('/api/announcements')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('announcementsList');
+            if (data.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">暂无公告</p>';
+                return;
+            }
+            
+            container.innerHTML = data.map(announcement => `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h5 class="card-title">
+                                    ${announcement.title}
+                                </h5>
+                                <p class="card-text">${announcement.content.length > 100 ? announcement.content.substring(0, 100) + '...' : announcement.content}</p>
+                                <small class="text-muted">
+                                    <i class="fas fa-user"></i> ${announcement.author_name} | 
+                                    <i class="fas fa-clock"></i> ${formatDate(announcement.created_at)}
+                                </small>
+                            </div>
+                            <div class="ms-3">
+                                <button class="btn btn-sm btn-outline-primary" onclick="showAnnouncementDetail(${announcement.id})">
+                                    查看详情
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('announcementsList').innerHTML = '<p class="text-danger text-center">加载失败</p>';
+        });
+}
+
+function showAnnouncementDetail(id) {
+    fetch('/api/announcements')
+        .then(response => response.json())
+        .then(data => {
+            const announcement = data.find(a => a.id === id);
+            if (announcement) {
+                document.getElementById('modalTitle').textContent = announcement.title;
+                document.getElementById('modalContent').innerHTML = `
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-user"></i> ${announcement.author_name} | 
+                            <i class="fas fa-clock"></i> ${formatDate(announcement.created_at)}
+                        </small>
+                    </div>
+                    <div class="announcement-content">
+                        ${announcement.content.replace(/\n/g, '<br>')}
+                    </div>
+                `;
+                new bootstrap.Modal(document.getElementById('announcementModal')).show();
+            }
+        });
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleString('zh-CN');
+}
+</script>
+{% endblock %}

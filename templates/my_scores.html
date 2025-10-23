@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+
+{% block title %}德育分查询 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>德育分查询</h4>
+                <small class="text-muted">查看您的德育分详细记录，按类别管理</small>
+            </div>
+            <div class="card-body">
+                <!-- 申请统计 -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #28a745; color: white; cursor: pointer;" onclick="window.location.href='/my-applications'">
+                            <div class="card-body text-center">
+                                <h5>已通过申请</h5>
+                                <h3 id="approved-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #ffc107; color: black; cursor: pointer;" onclick="window.location.href='/my-applications'">
+                            <div class="card-body text-center">
+                                <h5>待审核申请</h5>
+                                <h3 id="pending-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #dc3545; color: white; cursor: pointer;" onclick="window.location.href='/my-applications'">
+                            <div class="card-body text-center">
+                                <h5>被拒绝申请</h5>
+                                <h3 id="rejected-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #007bff; color: white; cursor: pointer;" onclick="window.location.href='/announcements'">
+                            <div class="card-body text-center">
+                                <h5>公告栏</h5>
+                                <h3><i class="fas fa-bullhorn"></i></h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 学年选择 -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">学年选择</h6>
+                                <div class="input-group">
+                                    <select class="form-control" id="academic-year-select">
+                                        <option value="">加载中...</option>
+                                    </select>
+                                    <button class="btn btn-primary" type="button" onclick="loadScoresByYear()">
+                                        <i class="fas fa-search"></i> 查询
+                                    </button>
+                                </div>
+                                <small class="text-muted">选择学年查看对应的德育分记录</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 按类别分组显示 -->
+                <div class="row">
+                    <div class="col-12">
+                        <div id="category-groups">
+                            <div class="text-center text-muted">
+                                <p>加载中...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentAcademicYear = '';
+let selectedAcademicYear = '';
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAcademicYears();
+    // loadScoreData() 将在 loadAcademicYears() 完成后自动调用
+});
+
+function loadAcademicYears() {
+    fetch('/api/academic-years')
+        .then(response => response.json())
+        .then(data => {
+            currentAcademicYear = data.currentAcademicYear;
+            selectedAcademicYear = currentAcademicYear;
+            
+            const select = document.getElementById('academic-year-select');
+            select.innerHTML = '';
+            
+            data.academicYears.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year.year_name;
+                option.textContent = year.year_name;
+                if (year.is_current) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            
+            // 自动加载当前学年的数据
+            loadScoreData();
+        })
+        .catch(error => console.error('Error loading academic years:', error));
+}
+
+function loadScoresByYear() {
+    const selectedYear = document.getElementById('academic-year-select').value;
+    selectedAcademicYear = selectedYear;
+    loadScoreData();
+}
+
+function loadScoreData() {
+    // 加载德育分数据
+    const url = selectedAcademicYear ? `/api/scores/my?academic_year=${selectedAcademicYear}` : '/api/scores/my';
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            displayCategoryGroups(data);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('category-groups').innerHTML = '<p class="text-center text-muted">加载失败</p>';
+        });
+
+    // 加载申请数据用于统计
+    fetch('/api/applications/my')
+        .then(response => response.json())
+        .then(data => {
+            updateApplicationStats(data);
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function displayCategoryGroups(data) {
+    const categoryGroupsDiv = document.getElementById('category-groups');
+    
+    // 先获取所有类别（包括教师端管理的类别）
+    fetch('/api/categories/all')
+        .then(response => response.json())
+        .then(categories => {
+            // 按类别分组数据
+            const categoryGroups = {};
+            
+            // 初始化所有主类别
+            categories.forEach(category => {
+                categoryGroups[category.name] = {
+                    category_name: category.name,
+                    category_id: category.id,
+                    total_score: 0,
+                    count: 0,
+                    records: [],
+                    source_type: category.source_type || '学生端',
+                    children: category.children || []
+                };
+                
+                // 初始化子类别
+                if (category.children) {
+                    category.children.forEach(child => {
+                        const childKey = `${category.name} - ${child.name}`;
+                        categoryGroups[childKey] = {
+                            category_name: childKey,
+                            category_id: child.id,
+                            total_score: 0,
+                            count: 0,
+                            records: [],
+                            source_type: category.source_type || '学生端',
+                            parent_name: category.name,
+                            is_subcategory: true
+                        };
+                    });
+                }
+            });
+            
+            // 填充有分数的类别数据
+            data.scores.forEach(score => {
+                // 尝试直接匹配类别名称
+                if (score.category_name && categoryGroups[score.category_name]) {
+                    categoryGroups[score.category_name].total_score += score.score;
+                    categoryGroups[score.category_name].count += 1;
+                    categoryGroups[score.category_name].records.push(score);
+                } else {
+                    // 尝试在主类别中查找匹配的子类别
+                    for (const mainCategory of categories) {
+                        const childKey = `${mainCategory.name} - ${score.category_name}`;
+                        if (categoryGroups[childKey]) {
+                            categoryGroups[childKey].total_score += score.score;
+                            categoryGroups[childKey].count += 1;
+                            categoryGroups[childKey].records.push(score);
+                            break;
+                        }
+                    }
+                }
+                
+                if (score.source === '初始德育分') {
+                    // 初始德育分单独处理
+                    if (!categoryGroups['初始德育分']) {
+                        categoryGroups['初始德育分'] = {
+                            category_name: '初始德育分',
+                            category_id: null,
+                            total_score: 0,
+                            count: 0,
+                            records: [],
+                            source_type: '系统'
+                        };
+                    }
+                    categoryGroups['初始德育分'].total_score += score.score;
+                    categoryGroups['初始德育分'].count += 1;
+                    categoryGroups['初始德育分'].records.push(score);
+                }
+            });
+
+            // 按主类别分组生成HTML
+            const mainCategories = categories;
+            if (mainCategories.length > 0) {
+                const categoryHtml = mainCategories.map(mainCategory => {
+                    const isStudentCategory = mainCategory.source_type === '学生端';
+                    
+                    // 计算主类别总分（应用上限限制）
+                    let mainCategoryTotal = 0;
+                    let mainCategoryCount = 0;
+                    let mainCategoryOriginalTotal = 0;
+                    let isMainCategoryLimited = false;
+                    
+                    // 计算子类别分数
+                    const subcategoryCards = mainCategory.children.map(child => {
+                        const childKey = `${mainCategory.name} - ${child.name}`;
+                        const childData = categoryGroups[childKey] || {
+                            total_score: 0,
+                            count: 0,
+                            records: []
+                        };
+                        
+                        mainCategoryOriginalTotal += childData.total_score;
+                        mainCategoryCount += childData.count;
+                        
+                        const isChildStudentCategory = child.source_type === '学生端';
+                        
+                        const isCurrentYear = selectedAcademicYear === currentAcademicYear;
+                        
+                        return `
+                            <div class="col-md-3 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body text-center">
+                                        <h6 class="card-title">${child.name}</h6>
+                                        <h4 class="text-primary">${childData.total_score}分</h4>
+                                        <div class="mt-2">
+                                            ${isChildStudentCategory && isCurrentYear ? `
+                                                <button class="btn btn-primary btn-sm mr-1" onclick="goToApplication(${child.id}, '${child.name}')">
+                                                    <i class="fas fa-plus"></i>
+                                                </button>
+                                            ` : ''}
+                                            <button class="btn btn-info btn-sm" onclick="viewCategoryApplications(${child.id}, '${child.name}')">
+                                                <i class="fas fa-list"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+
+                    // 应用项目类别分数上限
+                    const categoryLimits = {
+                        '思想政治理论分': 3,
+                        '社会服务分': 4,
+                        '集体活动分': 3,
+                        '学术科研分': 10,
+                        '文体竞赛分': 6,
+                        '奖励分': 5,
+                        '任职分': 4,
+                        '扣分': 0
+                    };
+                    
+                    const categoryLimit = categoryLimits[mainCategory.name] || 100;
+                    mainCategoryTotal = Math.min(mainCategoryOriginalTotal, categoryLimit);
+                    isMainCategoryLimited = mainCategoryOriginalTotal > categoryLimit;
+                    
+                    return `
+                        <div class="card mb-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-0">${mainCategory.name}</h5>
+                                    <small class="text-muted">
+                                        总计 ${mainCategoryTotal} 分
+                                        ${isMainCategoryLimited ? '<br><span class="text-warning">该类别已达上限</span>' : ''}
+                                    </small>
+                                </div>
+                                <div>
+                                    <button class="btn btn-info btn-sm" onclick="viewCategoryApplications(${mainCategory.id}, '${mainCategory.name}')">
+                                        <i class="fas fa-list"></i> 申请记录
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    ${subcategoryCards}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // 添加初始德育分
+                if (categoryGroups['初始德育分']) {
+                    const initialScore = categoryGroups['初始德育分'];
+                    categoryHtml += `
+                        <div class="card mb-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-0">初始德育分</h5>
+                                    <small class="text-muted">
+                                        <span class="badge badge-secondary">系统</span>
+                                        总计 ${initialScore.total_score} 分
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <div class="card h-100">
+                                            <div class="card-body text-center">
+                                                <h6 class="card-title">初始德育分</h6>
+                                                <h4 class="text-success">${initialScore.total_score}分</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+        
+                categoryGroupsDiv.innerHTML = categoryHtml;
+            } else {
+                categoryGroupsDiv.innerHTML = '<p class="text-center text-muted">暂无德育分类别</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading categories:', error);
+            categoryGroupsDiv.innerHTML = '<p class="text-center text-muted">加载类别失败</p>';
+        });
+}
+
+function goToApplication(categoryId, categoryName) {
+    // 跳转到按类别申请页面
+    window.location.href = `/application/category/${categoryId}?name=${encodeURIComponent(categoryName)}`;
+}
+
+function viewCategoryApplications(categoryId, categoryName) {
+    // 跳转到按类别申请记录页面
+    window.location.href = `/my-applications/category/${categoryId}?name=${encodeURIComponent(categoryName)}`;
+}
+
+function updateApplicationStats(applications) {
+    const approvedCount = applications.filter(app => app.status === 'approved').length;
+    const pendingCount = applications.filter(app => app.status === 'pending').length;
+    const rejectedCount = applications.filter(app => app.status === 'rejected').length;
+
+    document.getElementById('approved-count').textContent = approvedCount;
+    document.getElementById('pending-count').textContent = pendingCount;
+    document.getElementById('rejected-count').textContent = rejectedCount;
+}
+</script>
+{% endblock %}

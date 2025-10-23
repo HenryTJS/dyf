@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}学年管理 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>学年管理</h4>
+                <small class="text-muted">管理学年信息，设置当前学年</small>
+            </div>
+            <div class="card-body">
+                <!-- 添加新学年和学年列表 -->
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>添加新学年</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="addYearForm">
+                                    <div class="mb-3">
+                                        <label for="yearName" class="form-label">学年名称</label>
+                                        <input type="text" class="form-control" id="yearName" placeholder="如：2025-2026" required>
+                                        <small class="text-muted">格式：YYYY-YYYY</small>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">添加学年</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>学年列表</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>学年名称</th>
+                                                <th>状态</th>
+                                                <th>创建时间</th>
+                                                <th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="yearList">
+                                            <!-- 学年列表将通过JavaScript动态加载 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 确认删除模态框 -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除学年 "<span id="deleteYearName"></span>" 吗？</p>
+                <p class="text-danger">注意：如果该学年已有相关申请或记录，将无法删除。</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let deleteYearId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAcademicYears();
+    
+    // 添加学年表单提交
+    document.getElementById('addYearForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        addAcademicYear();
+    });
+    
+    // 确认删除按钮
+    document.getElementById('confirmDelete').addEventListener('click', function() {
+        if (deleteYearId) {
+            deleteAcademicYear(deleteYearId);
+        }
+    });
+    
+});
+
+function loadAcademicYears() {
+    fetch('/api/admin/academic-years')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('yearList');
+            tbody.innerHTML = '';
+            
+            data.forEach(year => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${year.year_name}</td>
+                    <td>
+                        ${year.is_current ? 
+                            '<span class="badge bg-success">当前学年</span>' : 
+                            '<span class="badge bg-secondary">非当前学年</span>'
+                        }
+                    </td>
+                    <td>${year.created_at ? new Date(year.created_at).toLocaleString() : '-'}</td>
+                    <td>
+                        ${!year.is_current ? 
+                            `<button class="btn btn-sm btn-primary me-2" onclick="setCurrentYear(${year.id})">设为当前</button>` : 
+                            ''
+                        }
+                        <button class="btn btn-sm btn-danger" onclick="showDeleteModal(${year.id}, '${year.year_name}')">删除</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('加载学年列表失败');
+        });
+}
+
+function addAcademicYear() {
+    const yearName = document.getElementById('yearName').value.trim();
+    
+    if (!yearName) {
+        alert('请输入学年名称');
+        return;
+    }
+    
+    // 验证学年格式
+    const yearPattern = /^\d{4}-\d{4}$/;
+    if (!yearPattern.test(yearName)) {
+        alert('学年格式不正确，请使用 YYYY-YYYY 格式');
+        return;
+    }
+    
+    fetch('/api/admin/academic-years', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            year_name: yearName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            alert(data.message);
+            if (data.message.includes('成功')) {
+                document.getElementById('yearName').value = '';
+                loadAcademicYears();
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('添加学年失败');
+    });
+}
+
+function setCurrentYear(yearId) {
+    if (!confirm('确定要设置该学年为当前学年吗？')) {
+        return;
+    }
+    
+    fetch(`/api/admin/academic-years/${yearId}/set-current`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        if (data.message.includes('成功')) {
+            loadAcademicYears();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('设置当前学年失败');
+    });
+}
+
+function showDeleteModal(yearId, yearName) {
+    deleteYearId = yearId;
+    document.getElementById('deleteYearName').textContent = yearName;
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+}
+
+function deleteAcademicYear(yearId) {
+    fetch(`/api/admin/academic-years/${yearId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        if (data.message.includes('成功')) {
+            loadAcademicYears();
+        }
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
+        modal.hide();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('删除学年失败');
+    });
+}
+
+</script>
+{% endblock %}

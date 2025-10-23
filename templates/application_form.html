@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}申请德育分 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>申请德育分</h4>
+                <small class="text-muted">请填写相关信息申请德育分</small>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('api_create_application') }}" id="applicationForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="main_category" class="form-label">项目类别</label>
+                            <select class="form-control" id="main_category" name="main_category" required>
+                                <option value="">请选择德育分类别</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="subcategory_id" class="form-label">子类别</label>
+                            <select class="form-control" id="subcategory_id" name="subcategory_id">
+                                <option value="">请选择子类别</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="academic_year" class="form-label">学年</label>
+                            <input type="text" class="form-control" id="academic_year" name="academic_year" readonly required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="score" class="form-label">分值</label>
+                            <input type="number" class="form-control" id="score" name="score" min="1" max="100" required placeholder="请输入申请分数">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="description" class="form-label">详细描述</label>
+                        <textarea class="form-control" id="description" name="description" rows="4" required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="evidence" class="form-label">证明材料</label>
+                        <input type="file" class="form-control" id="evidence" name="evidence" accept="application/pdf" required>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            提交申请
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadCategories();
+    loadAcademicYear();
+    
+    document.getElementById('applicationForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        submitApplication();
+    });
+});
+
+function loadCategories() {
+    fetch('/api/categories')
+        .then(response => response.json())
+        .then(data => {
+            const mainSelect = document.getElementById('main_category');
+            data.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.id;
+                option.textContent = `${category.name}`;
+                option.dataset.children = JSON.stringify(category.children);
+                mainSelect.appendChild(option);
+            });
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function loadAcademicYear() {
+    fetch('/api/academic-years')
+        .then(response => response.json())
+        .then(data => {
+            const academicYearInput = document.getElementById('academic_year');
+            academicYearInput.value = data.currentAcademicYear;
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+// 处理主类别选择变化
+document.getElementById('main_category').addEventListener('change', function() {
+    const subcategorySelect = document.getElementById('subcategory_id');
+    
+    // 清空子类别选项
+    subcategorySelect.innerHTML = '<option value="">请选择子类别</option>';
+    
+    const selectedOption = this.options[this.selectedIndex];
+    const children = JSON.parse((selectedOption && selectedOption.dataset && selectedOption.dataset.children) || '[]');
+    
+    if (children.length > 0) {
+        children.forEach(child => {
+            const option = document.createElement('option');
+            option.value = child.id;
+            option.textContent = `${child.name}`;
+            subcategorySelect.appendChild(option);
+        });
+        subcategorySelect.setAttribute('required', 'required');
+    } else {
+        subcategorySelect.removeAttribute('required');
+    }
+});
+
+function submitApplication() {
+    // 确定最终选择的类别ID
+    const subcategoryId = document.getElementById('subcategory_id').value;
+    const mainCategoryId = document.getElementById('main_category').value;
+    const finalCategoryId = subcategoryId || mainCategoryId;
+    
+    // 创建FormData对象来处理文件上传
+    const formData = new FormData();
+    formData.append('category_id', finalCategoryId);
+    formData.append('description', document.getElementById('description').value);
+    formData.append('score', document.getElementById('score').value);
+    formData.append('academic_year', document.getElementById('academic_year').value);
+    
+    // 处理文件上传
+    const evidenceFile = document.getElementById('evidence').files[0];
+    if (!evidenceFile) {
+        alert('请上传PDF证明材料');
+        return;
+    }
+    const isPdf = evidenceFile.type === 'application/pdf' || (evidenceFile.name || '').toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+        alert('仅支持PDF格式');
+        return;
+    }
+    formData.append('evidence', evidenceFile);
+
+    fetch('/api/applications', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        return response.json().then(data => {
+            if (response.ok) {
+                alert('申请提交成功！');
+                window.location.href = '/my-applications';
+            } else {
+                alert('申请提交失败：' + (data.message || '未知错误'));
+            }
+        });
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('申请提交失败，请重试');
+    });
+}
+</script>
+{% endblock %}

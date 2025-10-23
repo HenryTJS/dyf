@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}申请记录 - {{ category.name }} - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header" data-category-id="{{ category.id }}" data-category-name="{{ category.name }}">
+                <h4>{{ category.name }} - 申请记录</h4>
+                <small class="text-muted">查看您在此类别的所有申请记录</small>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <button class="btn btn-primary" onclick="goToApplication()">
+                            <i class="fas fa-plus"></i> 新增申请
+                        </button>
+                    </div>
+                    <div>
+                        <a href="{{ url_for('my_scores') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> 返回德育分查询
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    此页面显示该类别下的所有记录，包括您的申请记录和教师端导入的德育分记录。
+                </div>
+                
+                <div id="applicationsList">
+                    <div class="text-center text-muted">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 从HTML元素获取模板变量
+const categoryId = parseInt(document.querySelector('[data-category-id]').dataset.categoryId);
+const categoryName = document.querySelector('[data-category-name]').dataset.categoryName;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadCategoryApplications();
+});
+
+function loadCategoryApplications() {
+    // 同时获取申请记录和德育分记录
+    Promise.all([
+        fetch(`/api/applications/my?category_id=${categoryId}`),
+        fetch('/api/scores/my')
+    ])
+    .then(responses => Promise.all(responses.map(r => r.json())))
+    .then(([applications, scores]) => {
+        // 过滤出当前类别的德育分记录
+        const categoryScores = scores.scores.filter(score => 
+            score.category_id === categoryId && score.source !== '初始德育分'
+        );
+        
+        // 合并申请记录和德育分记录
+        const allRecords = [
+            ...applications.map(app => ({
+                ...app,
+                type: 'application',
+                status: app.status
+            })),
+            ...categoryScores.map(score => ({
+                ...score,
+                type: 'score',
+                status: '已通过',
+                title: score.description,
+                source: score.source
+            }))
+        ];
+        
+        // 按时间排序
+        allRecords.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        
+        displayApplications(allRecords);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('applicationsList').innerHTML = '<p class="text-center text-muted">加载失败</p>';
+    });
+}
+
+function displayApplications(applications) {
+    const applicationsDiv = document.getElementById('applicationsList');
+    
+    if (applications.length === 0) {
+        applicationsDiv.innerHTML = '<p class="text-center text-muted">暂无申请记录</p>';
+        return;
+    }
+    
+    const applicationsHtml = applications.map(app => {
+        let statusBadge = '';
+        let statusClass = '';
+        
+        switch(app.status) {
+            case 'pending':
+                statusBadge = '待审核';
+                statusClass = 'warning';
+                break;
+            case 'approved':
+                statusBadge = '已通过';
+                statusClass = 'success';
+                break;
+            case 'rejected':
+                statusBadge = '被拒绝';
+                statusClass = 'danger';
+                break;
+            default:
+                statusBadge = '未知';
+                statusClass = 'secondary';
+        }
+        
+        const recordType = app.type === 'application' ? '申请记录' : '德育分记录';
+        const recordTypeClass = app.type === 'application' ? 'primary' : 'success';
+        
+        return `
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center mb-2">
+                                <h6 class="card-title mb-0">${app.title || app.description}</h6>
+                                <span class="badge badge-${recordTypeClass} ml-2">${recordType}</span>
+                            </div>
+                            <p class="card-text text-muted mb-2">
+                                <strong>分数：</strong>${app.score}分 | 
+                                ${app.type === 'score' ? `<strong>来源：</strong>${app.source || '未填写'} | ` : ''}
+                                <strong>时间：</strong>${new Date(app.created_at).toLocaleString()}
+                                ${app.academic_year ? ` | <strong>学年：</strong>${app.academic_year}` : ''}
+                            </p>
+                            ${app.description && app.description !== (app.title || '') ? `<p class="card-text text-muted"><strong>详细描述：</strong>${app.description}</p>` : ''}
+                            ${app.review_comment ? `<p class="card-text"><strong>审核意见：</strong>${app.review_comment}</p>` : ''}
+                        </div>
+                        <div class="ml-3">
+                            <span class="badge badge-${statusClass}">${statusBadge}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    applicationsDiv.innerHTML = applicationsHtml;
+}
+
+function goToApplication() {
+    window.location.href = `/application/category/${categoryId}?name=${encodeURIComponent(categoryName)}`;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}我的申请 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>我的申请记录</h4>
+                <small class="text-muted">查看和管理您的德育分申请</small>
+            </div>
+            <div class="card-body">
+                <div id="applications-container">
+                    <div class="text-center text-muted">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div id="detailModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h5>申请详情</h5>
+            <button onclick="closeModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+        <div id="modal-content"></div>
+        <div style="margin-top: 1rem; text-align: right;">
+            <button onclick="closeModal()" class="btn btn-primary">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadApplications();
+});
+
+function loadApplications() {
+    fetch('/api/applications/my')
+        .then(response => response.json())
+        .then(data => {
+            displayApplications(data);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('applications-container').innerHTML = '<p class="text-center text-muted">加载失败</p>';
+        });
+}
+
+function displayApplications(applications) {
+    const container = document.getElementById('applications-container');
+    
+    if (applications.length === 0) {
+        container.innerHTML = '<p class="text-center text-muted">暂无申请记录</p>';
+        return;
+    }
+
+    const html = applications.map(app => `
+        <div class="card" style="margin-bottom: 1rem;">
+            <div class="card-body">
+                <div style="display: flex; justify-content: between; align-items: start;">
+                    <div style="flex: 1;">
+                        <h6 style="margin-bottom: 0.5rem;">${app.title}</h6>
+                        <p style="margin-bottom: 0.5rem; color: #666;">
+                            <strong>类别：</strong>${app.category_name} | 
+                            <strong>分数：</strong>${app.score}分 | 
+                            <strong>时间：</strong>${new Date(app.created_at).toLocaleString()}
+                        </p>
+                        <p style="margin-bottom: 0; color: #666;">${app.description}</p>
+                    </div>
+                    <div style="margin-left: 1rem;">
+                        <span class="badge badge-${getStatusColor(app.status)}" style="margin-bottom: 0.5rem; display: block;">
+                            ${getStatusText(app.status)}
+                        </span>
+                        <button onclick="showDetail(${app.id})" class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">
+                            查看详情
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    container.innerHTML = html;
+}
+
+function getStatusColor(status) {
+    switch (status) {
+        case 'approved': return 'success';
+        case 'rejected': return 'danger';
+        case 'pending': return 'warning';
+        default: return 'secondary';
+    }
+}
+
+function getStatusText(status) {
+    switch (status) {
+        case 'approved': return '已通过';
+        case 'rejected': return '已拒绝';
+        case 'pending': return '待审核';
+        default: return '未知';
+    }
+}
+
+function showDetail(applicationId) {
+    fetch('/api/applications/my')
+        .then(response => response.json())
+        .then(data => {
+            const app = data.find(a => a.id === applicationId);
+            if (app) {
+                const modalContent = document.getElementById('modal-content');
+                modalContent.innerHTML = `
+                    <div style="margin-bottom: 1rem;">
+                        <strong>申请标题：</strong>${app.title}
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <strong>申请类别：</strong>${app.category_name}
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <strong>申请分数：</strong>${app.score}分
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <strong>申请描述：</strong><br>
+                        <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;">
+                            ${app.description}
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <strong>申请状态：</strong>
+                        <span class="badge badge-${getStatusColor(app.status)}">${getStatusText(app.status)}</span>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <strong>申请时间：</strong>${new Date(app.created_at).toLocaleString()}
+                    </div>
+                    ${app.review_comment ? `
+                        <div style="margin-bottom: 1rem;">
+                            <strong>审核意见：</strong><br>
+                            <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;">
+                                ${app.review_comment}
+                            </div>
+                        </div>
+                    ` : ''}
+                    ${app.reviewed_at ? `
+                        <div style="margin-bottom: 1rem;">
+                            <strong>审核时间：</strong>${new Date(app.reviewed_at).toLocaleString()}
+                        </div>
+                    ` : ''}
+                `;
+                document.getElementById('detailModal').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('加载详情失败');
+        });
+}
+
+function closeModal() {
+    document.getElementById('detailModal').style.display = 'none';
+}
+
+// 点击模态框背景关闭
+document.getElementById('detailModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}教师集体申请 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>发起集体申请</h4>
+                <small class="text-muted">一次仅对应一个项目类别；上传成员Excel，包含学号、姓名、班级、分值</small>
+            </div>
+            <div class="card-body">
+                <form id="group-form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">项目类别</label>
+                            <input type="text" class="form-control" id="main_category" readonly required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">子类别</label>
+                            <input type="text" class="form-control" id="subcategory_name" readonly required>
+                            <input type="hidden" id="subcategory_id" required>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">学年</label>
+                            <input type="text" class="form-control" id="academic_year" readonly required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">详细描述</label>
+                        <textarea class="form-control" id="description" rows="4" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">证明材料</label>
+                        <input type="file" class="form-control" id="evidence" required/>
+                    </div>
+                    <div class="mb-3">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <label class="form-label">成员名单，Excel格式：学号、姓名、班级、书院、奖励类别、分值</label>
+                            <a class="btn btn-sm btn-outline-primary" id="download-template">下载模板</a>
+                        </div>
+                        <input type="file" class="form-control" id="members" accept=".xlsx,.xls,.csv" required />
+                    </div>
+                    <button type="submit" class="btn btn-primary">提交集体申请</button>
+                </form>
+                <div id="result" class="mt-4"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function loadAcademicYear() {
+    fetch('/api/academic-years')
+        .then(response => response.json())
+        .then(data => {
+            const academicYearInput = document.getElementById('academic_year');
+            academicYearInput.value = data.currentAcademicYear;
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function loadPreSelectedCategory() {
+    // 从URL参数获取预选的类别信息
+    const urlParams = new URLSearchParams(window.location.search);
+    const categoryId = urlParams.get('category_id');
+    const categoryName = urlParams.get('category_name');
+    
+    if (categoryId && categoryName) {
+        // 预填充类别信息
+        document.getElementById('subcategory_id').value = categoryId;
+        document.getElementById('subcategory_name').value = categoryName;
+        
+        // 需要获取主类别名称
+        fetch('/api/categories/teacher')
+            .then(response => response.json())
+            .then(categories => {
+                for (const category of categories) {
+                    for (const child of category.children) {
+                        if (child.id == categoryId) {
+                            document.getElementById('main_category').value = category.name;
+                            break;
+                        }
+                    }
+                }
+            })
+            .catch(error => console.error('Error loading categories:', error));
+    }
+}
+
+document.getElementById('download-template').addEventListener('click', async () => {
+    const headers = ['学号','姓名','班级','书院','奖励类别','分值'];
+    const csv = '\ufeff' + headers.join(',') + '\n';
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '集体申请模板.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+});
+
+document.getElementById('group-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData();
+    const subId = document.getElementById('subcategory_id').value;
+    const mainId = document.getElementById('main_category').value;
+    fd.append('category_id', subId || mainId);
+    fd.append('academic_year', document.getElementById('academic_year').value);
+    fd.append('description', document.getElementById('description').value);
+    const evidence = document.getElementById('evidence').files[0];
+    if (!evidence) {
+        alert('请上传证明材料');
+        return;
+    }
+    fd.append('evidence', evidence);
+    const members = document.getElementById('members').files[0];
+    if (!members) {
+        alert('请上传成员名单');
+        return;
+    }
+    fd.append('members', members);
+
+    const res = await fetch('/api/group-applications', { method: 'POST', body: fd });
+    const data = await res.json();
+    const div = document.getElementById('result');
+    if (res.ok) {
+        div.innerHTML = '<div class="alert alert-success">提交成功：编号 ' + data.id + '</div>';
+    } else {
+        div.innerHTML = '<div class="alert alert-danger">提交失败：' + (data.message || '未知错误') + '</div>';
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadPreSelectedCategory();
+    loadAcademicYear();
+});
+</script>
+{% endblock %}
+
+

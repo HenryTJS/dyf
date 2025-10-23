@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}我的集体申请 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>我的集体申请</h4>
+            </div>
+            <div class="card-body">
+                <div id="list">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getStatusText(status) {
+    switch(status) {
+        case 'pending': return '待审核';
+        case 'approved': return '已通过';
+        case 'rejected': return '已驳回';
+        case 'withdrawn': return '已撤回';
+        default: return status;
+    }
+}
+
+async function loadList() {
+    const res = await fetch('/api/group-applications/my');
+    const data = await res.json();
+    const box = document.getElementById('list');
+    if (!Array.isArray(data) || data.length === 0) {
+        box.innerHTML = '<p class="text-muted">暂无记录</p>';
+        return;
+    }
+    box.innerHTML = data.map(item => `
+        <div class="card" style="margin-bottom: 1rem;">
+            <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <div><strong>${item.title}</strong></div>
+                    <div class="text-muted">学年：${item.semester} | 人数：${item.member_count} | 状态：${getStatusText(item.status)}</div>
+                </div>
+                <div>
+                    ${item.status === 'pending' ? '<button class="btn btn-sm btn-warning" onclick="withdraw(' + item.id + ')">撤回</button>' : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function withdraw(id) {
+    if (!confirm('确认撤回该申请？')) return;
+    const res = await fetch('/api/group-applications/' + id + '/withdraw', {method: 'POST'});
+    const data = await res.json();
+    if (res.ok) {
+        loadList();
+    } else {
+        alert(data.message || '撤回失败');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadList);
+</script>
+{% endblock %}
+
+

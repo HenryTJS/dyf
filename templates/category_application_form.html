@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}申请德育分 - {{ category.name }} - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header" data-category-id="{{ category.id }}">
+                <h4>申请德育分</h4>
+                <small class="text-muted">申请 {{ category.name }} 类别的德育分</small>
+            </div>
+            <div class="card-body">
+                <form id="applicationForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="category" class="form-label">项目类别</label>
+                            <input type="text" class="form-control" id="category" name="category" value="{{ category.parent_name }}" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="subcategory" class="form-label">子类别</label>
+                            <input type="text" class="form-control" id="subcategory" name="subcategory" value="{{ category.name }}" readonly>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <label for="academic_year" class="form-label">学年</label>
+                            <input type="text" class="form-control" id="academic_year" name="academic_year" readonly required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="score" class="form-label">申请分数</label>
+                            <input type="number" class="form-control" id="score" name="score" min="1" max="100" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <label for="description" class="form-label">详细描述</label>
+                            <textarea class="form-control" id="description" name="description" rows="4" required></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <label for="evidence" class="form-label">证明材料</label>
+                            <input type="file" class="form-control" id="evidence" name="evidence" accept=".pdf" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> 提交申请
+                            </button>
+                            <a href="{{ url_for('my_scores') }}" class="btn btn-secondary ml-2">
+                                <i class="fas fa-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 从HTML元素获取模板变量
+const categoryId = parseInt(document.querySelector('[data-category-id]').dataset.categoryId);
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAcademicYear();
+});
+
+function loadAcademicYear() {
+    fetch('/api/academic-years')
+        .then(response => response.json())
+        .then(data => {
+            const academicYearInput = document.getElementById('academic_year');
+            academicYearInput.value = data.currentAcademicYear;
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+document.getElementById('applicationForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    // 验证文件
+    const evidenceFile = document.getElementById('evidence').files[0];
+    if (!evidenceFile) {
+        alert('请上传PDF证明材料');
+        return;
+    }
+    
+    // 验证文件格式
+    const isPdf = evidenceFile.type === 'application/pdf' || evidenceFile.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+        alert('仅支持PDF格式的证明材料');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('category_id', categoryId);
+    formData.append('description', document.getElementById('description').value);
+    formData.append('score', document.getElementById('score').value);
+    formData.append('academic_year', document.getElementById('academic_year').value);
+    formData.append('evidence', evidenceFile);
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 提交中...';
+    submitBtn.disabled = true;
+    
+    fetch('/api/applications', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message && data.message.includes('成功')) {
+            alert('申请提交成功！');
+            window.location.href = '/my-scores';
+        } else {
+            alert('申请提交失败：' + (data.message || '未知错误'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('申请提交失败，请重试');
+    })
+    .finally(() => {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    });
+});
+</script>
+{% endblock %}

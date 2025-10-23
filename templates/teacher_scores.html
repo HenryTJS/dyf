@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}德育分管理 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>德育分管理</h4>
+                <small class="text-muted">管理教师端德育分类别，按类别进行集体申请</small>
+            </div>
+            <div class="card-body">
+                <!-- 申请统计 -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #28a745; color: white; cursor: pointer;" onclick="window.location.href='/teacher/group-applications'">
+                            <div class="card-body text-center">
+                                <h5>已通过申请</h5>
+                                <h3 id="approved-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #ffc107; color: black; cursor: pointer;" onclick="window.location.href='/teacher/group-applications'">
+                            <div class="card-body text-center">
+                                <h5>待审核申请</h5>
+                                <h3 id="pending-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #dc3545; color: white; cursor: pointer;" onclick="window.location.href='/teacher/group-applications'">
+                            <div class="card-body text-center">
+                                <h5>被拒绝申请</h5>
+                                <h3 id="rejected-count">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card" style="background-color: #007bff; color: white; cursor: pointer;" onclick="window.location.href='/announcements'">
+                            <div class="card-body text-center">
+                                <h5>公告栏</h5>
+                                <h3><i class="fas fa-bullhorn"></i></h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 学年选择 -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">学年选择</h6>
+                                <div class="input-group">
+                                    <select class="form-control" id="academic-year-select">
+                                        <option value="">加载中...</option>
+                                    </select>
+                                    <button class="btn btn-primary" type="button" onclick="loadTeacherScoresByYear()">
+                                        <i class="fas fa-search"></i> 查询
+                                    </button>
+                                </div>
+                                <small class="text-muted">选择学年查看对应的德育分记录</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 按类别分组显示 -->
+                <div class="row">
+                    <div class="col-12">
+                        <div id="category-groups">
+                            <div class="text-center text-muted">
+                                <p>加载中...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentAcademicYear = '';
+let selectedAcademicYear = '';
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAcademicYears();
+    loadTeacherApplications();
+    // displayCategoryGroups() 将在 loadAcademicYears() 完成后自动调用
+});
+
+function loadAcademicYears() {
+    fetch('/api/academic-years')
+        .then(response => response.json())
+        .then(data => {
+            currentAcademicYear = data.currentAcademicYear;
+            selectedAcademicYear = currentAcademicYear;
+            
+            const select = document.getElementById('academic-year-select');
+            select.innerHTML = '';
+            
+            data.academicYears.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year.year_name;
+                option.textContent = year.year_name;
+                if (year.is_current) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            
+            // 自动加载当前学年的数据
+            displayCategoryGroups();
+        })
+        .catch(error => console.error('Error loading academic years:', error));
+}
+
+function loadTeacherScoresByYear() {
+    const selectedYear = document.getElementById('academic-year-select').value;
+    selectedAcademicYear = selectedYear;
+    displayCategoryGroups();
+}
+
+function loadTeacherApplications() {
+    fetch('/api/teacher/group-applications')
+        .then(response => response.json())
+        .then(data => {
+            // 统计各种状态的申请数量
+            let approved = 0, pending = 0, rejected = 0;
+            
+            data.forEach(app => {
+                switch(app.status) {
+                    case 'approved':
+                        approved++;
+                        break;
+                    case 'pending':
+                        pending++;
+                        break;
+                    case 'rejected':
+                        rejected++;
+                        break;
+                }
+            });
+            
+            document.getElementById('approved-count').textContent = approved;
+            document.getElementById('pending-count').textContent = pending;
+            document.getElementById('rejected-count').textContent = rejected;
+        })
+        .catch(error => {
+            console.error('Error loading teacher applications:', error);
+        });
+}
+
+function displayCategoryGroups() {
+    const categoryGroupsDiv = document.getElementById('category-groups');
+    
+    // 先获取所有类别（只获取教师端管理的类别）
+    fetch('/api/categories/teacher')
+        .then(response => response.json())
+        .then(categories => {
+            console.log('Received categories:', categories); // 调试日志
+            
+            if (!categories || categories.length === 0) {
+                categoryGroupsDiv.innerHTML = '<p class="text-center text-muted">暂无德育分类别</p>';
+                return;
+            }
+
+            // 生成HTML
+            const categoryHtml = categories.map(category => {
+                // 计算子类别卡片
+                const isCurrentYear = selectedAcademicYear === currentAcademicYear;
+                const subcategoryCards = category.children.map(child => {
+                    return `
+                        <div class="col-md-3 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="card-title">${child.name}</h6>
+                                    <h4 class="text-primary">0分</h4>
+                                    <div class="mt-2">
+                                        ${isCurrentYear ? `
+                                            <button class="btn btn-primary btn-sm mr-1" onclick="goToGroupApplication(${child.id}, '${child.name}')">
+                                                <i class="fas fa-plus"></i>
+                                            </button>
+                                        ` : ''}
+                                        <button class="btn btn-info btn-sm" onclick="viewCategoryGroupApplications(${child.id}, '${child.name}')">
+                                            <i class="fas fa-list"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">${category.name}</h5>
+                                <small class="text-muted">
+                                </small>
+                            </div>
+                            <div>
+                                <button class="btn btn-info btn-sm" onclick="viewCategoryGroupApplications(${category.id}, '${category.name}')">
+                                    <i class="fas fa-list"></i> 申请记录
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                ${subcategoryCards}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            categoryGroupsDiv.innerHTML = categoryHtml;
+        })
+        .catch(error => {
+            console.error('Error loading categories:', error);
+            categoryGroupsDiv.innerHTML = '<p class="text-center text-muted">加载类别失败</p>';
+        });
+}
+
+function goToGroupApplication(categoryId, categoryName) {
+    window.location.href = `/teacher/group-application?category_id=${categoryId}&category_name=${encodeURIComponent(categoryName)}`;
+}
+
+function viewCategoryGroupApplications(categoryId, categoryName) {
+    window.location.href = `/teacher/group-applications?category_id=${categoryId}&category_name=${encodeURIComponent(categoryName)}`;
+}
+</script>
+{% endblock %}

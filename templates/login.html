@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}登录 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-card">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="login-title">德育分管理系统</h3>
+                <form method="POST" action="{{ url_for('login') }}">
+                    <div class="form-group">
+                        <label for="username" class="form-label">学号/工号</label>
+                        <input type="text" class="form-control" id="username" name="username" required placeholder="请输入学号或工号">
+                    </div>
+                    <div class="form-group">
+                        <label for="password" class="form-label">密码</label>
+                        <input type="password" class="form-control" id="password" name="password" required placeholder="请输入密码">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            登录
+                        </button>
+                    </div>
+                </form>
+                <div class="login-help">
+                    <small class="text-muted">初始密码为学号或工号，建议首次登录后修改密码</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
