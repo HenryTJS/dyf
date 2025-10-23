@@ -13,14 +13,29 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'moral_score_secret_key_2024'
 # 统一使用 instance 目录下的数据库文件
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'instance', 'moral_score.db')
+INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
+DB_PATH = os.path.join(INSTANCE_DIR, 'moral_score.db')
+
+# 确保instance目录存在
+os.makedirs(INSTANCE_DIR, exist_ok=True)
+
+# 设置数据库URI
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + DB_PATH.replace('\\', '/')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file size
 
+# PythonAnywhere 静态文件配置
+app.static_folder = 'static'
+app.template_folder = 'templates'
+
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# 调试信息
+print(f"项目根目录: {BASE_DIR}")
+print(f"数据库路径: {DB_PATH}")
+print(f"上传目录: {app.config['UPLOAD_FOLDER']}")
 
 # 初始化扩展
 db = SQLAlchemy(app)
@@ -1858,6 +1873,11 @@ def init_db():
 # 模板路由
 @app.route('/')
 def index():
+    # 检查是否有静态的index.html文件
+    import os
+    if os.path.exists('index.html'):
+        return send_file('index.html')
+    
     if 'user' in session:
         # 根据用户角色重定向到不同页面
         if session['user']['role'] == 'admin':

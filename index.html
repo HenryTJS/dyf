@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>德育分管理系统</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        .logo {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .title {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 1.5em;
+        }
+        .description {
+            color: #666;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        .login-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1.1em;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        .features {
+            margin-top: 30px;
+            text-align: left;
+        }
+        .feature {
+            margin: 10px 0;
+            color: #555;
+        }
+        .feature::before {
+            content: "✓ ";
+            color: #667eea;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📊</div>
+        <h1 class="title">德育分管理系统</h1>
+        <p class="description">
+            一个现代化的学生德育分管理平台，支持个人申请、集体申请、审核管理等功能。
+        </p>
+        
+        <a href="/login" class="login-btn">立即登录</a>
+        
+        <div class="features">
+            <div class="feature">学生个人德育分申请</div>
+            <div class="feature">教师集体德育分申请</div>
+            <div class="feature">管理员审核管理</div>
+            <div class="feature">德育分统计与导出</div>
+            <div class="feature">学年管理</div>
+            <div class="feature">公告发布</div>
+        </div>
+    </div>
+</body>
+</html>
