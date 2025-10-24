@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+
+{% block title %}申请审核 - 德育分管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4>申请审核</h4>
+                <small class="text-muted">审核学生和教师提交的德育分申请</small>
+                <div class="float-end">
+                    <a href="{{ url_for('statistics') }}" class="btn btn-sm btn-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> 返回
+                    </a>
+                    <button class="btn btn-sm btn-outline-primary" onclick="refreshCurrentTab()">
+                        <i class="fas fa-sync-alt"></i> 刷新
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- 选项卡导航 -->
+                <ul class="nav nav-tabs mb-3" id="reviewTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="individual-tab" data-bs-toggle="tab" data-bs-target="#individual" type="button" role="tab">
+                            <i class="fas fa-user"></i> 个人申请
+                            <span class="badge bg-warning ms-2" id="individualPendingCount">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="group-tab" data-bs-toggle="tab" data-bs-target="#group" type="button" role="tab">
+                            <i class="fas fa-users"></i> 集体申请
+                            <span class="badge bg-warning ms-2" id="groupPendingCount">0</span>
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- 选项卡内容 -->
+                <div class="tab-content" id="reviewTabContent">
+                    <!-- 个人申请选项卡 -->
+                    <div class="tab-pane fade show active" id="individual" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>申请人</th>
+                                        <th>学号</th>
+                                        <th>班级</th>
+                                        <th>申请标题</th>
+                                        <th>类别</th>
+                                        <th>申请分数</th>
+                                        <th>学年</th>
+                                        <th>状态</th>
+                                        <th>申请时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="individualApplicationsBody">
+                                    <tr>
+                                        <td colspan="11" class="text-center">加载中...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 集体申请选项卡 -->
+                    <div class="tab-pane fade" id="group" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>申请教师</th>
+                                        <th>申请标题</th>
+                                        <th>类别</th>
+                                        <th>学年</th>
+                                        <th>成员数</th>
+                                        <th>状态</th>
+                                        <th>申请时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="groupApplicationsBody">
+                                    <tr>
+                                        <td colspan="9" class="text-center">加载中...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 统一审核模态框 -->
+<div class="modal fade" id="reviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="reviewModalTitle">审核申请</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="applicationDetails">
+                    <!-- 申请详情将在这里显示 -->
+                </div>
+                <hr>
+                <form id="reviewForm">
+                    <input type="hidden" id="applicationId">
+                    <input type="hidden" id="applicationType">
+                    <div class="mb-3">
+                        <label class="form-label">审核结果</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="status" id="statusApproved" value="approved">
+                            <label class="form-check-label text-success" for="statusApproved">
+                                <strong>通过</strong>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="status" id="statusRejected" value="rejected">
+                            <label class="form-check-label text-danger" for="statusRejected">
+                                <strong>驳回</strong>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">审核意见</label>
+                        <textarea class="form-control" id="reviewComment" rows="4" placeholder="请输入审核意见..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="submitReviewBtn" onclick="submitReview()">提交审核</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 当前激活的选项卡
+let currentTab = 'individual';
+
+document.addEventListener('DOMContentLoaded', function() {
+    // 加载个人申请
+    loadIndividualApplications();
+    
+    // 监听选项卡切换
+    const tabButtons = document.querySelectorAll('#reviewTabs button[data-bs-toggle="tab"]');
+    tabButtons.forEach(button => {
+        button.addEventListener('shown.bs.tab', function(event) {
+            currentTab = event.target.id.replace('-tab', '');
+            if (currentTab === 'individual') {
+                loadIndividualApplications();
+            } else if (currentTab === 'group') {
+                loadGroupApplications();
+            }
+        });
+    });
+});
+
+// 刷新当前选项卡
+function refreshCurrentTab() {
+    if (currentTab === 'individual') {
+        loadIndividualApplications();
+    } else if (currentTab === 'group') {
+        loadGroupApplications();
+    }
+}
+
+// 获取状态徽章样式
+function getStatusBadge(status) {
+    const statusMap = {
+        'pending': { text: '待审核', class: 'warning' },
+        'approved': { text: '已通过', class: 'success' },
+        'rejected': { text: '已驳回', class: 'danger' },
+        'withdrawn': { text: '已撤回', class: 'secondary' }
+    };
+    const info = statusMap[status] || { text: status, class: 'secondary' };
+    return `<span class="badge bg-${info.class}">${info.text}</span>`;
+}
+
+// 加载个人申请
+function loadIndividualApplications() {
+    fetch('/api/applications')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('individualApplicationsBody');
+            if (!Array.isArray(data) || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">暂无申请记录</td></tr>';
+                document.getElementById('individualPendingCount').textContent = '0';
+                return;
+            }
+            
+            // 统计待审核数量
+            const pendingCount = data.filter(app => app.status === 'pending').length;
+            document.getElementById('individualPendingCount').textContent = pendingCount;
+            
+            tbody.innerHTML = data.map(app => `
+                <tr>
+                    <td>${app.id}</td>
+                    <td>${app.user_name}</td>
+                    <td>${app.student_id}</td>
+                    <td>${app.class_name || '-'}</td>
+                    <td>${app.title}</td>
+                    <td>${app.category_name}</td>
+                    <td>${app.score}</td>
+                    <td>${app.academic_year || '-'}</td>
+                    <td>${getStatusBadge(app.status)}</td>
+                    <td>${new Date(app.created_at).toLocaleString()}</td>
+                    <td>
+                        ${app.status === 'pending' ? 
+                            `<button class="btn btn-sm btn-primary" onclick="showIndividualReview(${app.id})">审核</button>` : 
+                            `<button class="btn btn-sm btn-secondary" onclick="showIndividualReview(${app.id})">查看</button>`
+                        }
+                    </td>
+                </tr>
+            `).join('');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('individualApplicationsBody').innerHTML = 
+                '<tr><td colspan="11" class="text-center text-danger">加载失败: ' + error.message + '</td></tr>';
+        });
+}
+
+// 加载集体申请
+function loadGroupApplications() {
+    fetch('/api/group-applications')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('groupApplicationsBody');
+            if (!Array.isArray(data) || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无集体申请记录</td></tr>';
+                document.getElementById('groupPendingCount').textContent = '0';
+                return;
+            }
+            
+            // 统计待审核数量
+            const pendingCount = data.filter(app => app.status === 'pending').length;
+            document.getElementById('groupPendingCount').textContent = pendingCount;
+            
+            tbody.innerHTML = data.map(app => `
+                <tr>
+                    <td>${app.id}</td>
+                    <td>${app.teacher_name || '未知教师'}</td>
+                    <td>${app.title}</td>
+                    <td>${app.category_name || '未知类别'}</td>
+                    <td>${app.academic_year}</td>
+                    <td>${app.member_count}</td>
+                    <td>${getStatusBadge(app.status)}</td>
+                    <td>${new Date(app.created_at).toLocaleString()}</td>
+                    <td>
+                        ${app.status === 'pending' ? 
+                            `<button class="btn btn-sm btn-primary" onclick="showGroupReview(${app.id})">审核</button>` : 
+                            `<button class="btn btn-sm btn-secondary" onclick="showGroupReview(${app.id})">查看</button>`
+                        }
+                    </td>
+                </tr>
+            `).join('');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('groupApplicationsBody').innerHTML = 
+                '<tr><td colspan="9" class="text-center text-danger">加载失败: ' + error.message + '</td></tr>';
+        });
+}
+
+// 显示个人申请审核
+function showIndividualReview(appId) {
+    fetch(`/api/applications`)
+        .then(response => response.json())
+        .then(data => {
+            const app = data.find(a => a.id === appId);
+            if (!app) {
+                alert('找不到申请记录');
+                return;
+            }
+            
+            document.getElementById('applicationId').value = appId;
+            document.getElementById('applicationType').value = 'individual';
+            document.getElementById('reviewModalTitle').textContent = '审核个人申请';
+            
+            // 显示申请详情
+            document.getElementById('applicationDetails').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>申请信息</h6>
+                        <p><strong>申请人：</strong>${app.user_name}</p>
+                        <p><strong>学号：</strong>${app.student_id}</p>
+                        <p><strong>班级：</strong>${app.class_name || '-'}</p>
+                        <p><strong>类别：</strong>${app.category_name}</p>
+                        <p><strong>申请分数：</strong>${app.score}</p>
+                        <p><strong>学年：</strong>${app.academic_year || '-'}</p>
+                        <p><strong>申请时间：</strong>${new Date(app.created_at).toLocaleString()}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>申请说明</h6>
+                        <p>${app.description}</p>
+                        ${app.evidence ? `<p><strong>证明材料：</strong><a href="/api/download/${app.evidence}" target="_blank" class="btn btn-sm btn-outline-primary">下载查看</a></p>` : ''}
+                        ${app.review_comment ? `<p><strong>审核意见：</strong>${app.review_comment}</p>` : ''}
+                    </div>
+                </div>
+            `;
+            
+            // 重置表单
+            document.getElementById('reviewForm').reset();
+            document.getElementById('reviewComment').value = app.review_comment || '';
+            
+            // 如果是已审核的申请，禁用表单
+            const isReviewed = app.status !== 'pending';
+            document.querySelectorAll('#reviewForm input, #reviewForm textarea').forEach(el => {
+                el.disabled = isReviewed;
+            });
+            document.getElementById('submitReviewBtn').style.display = isReviewed ? 'none' : 'block';
+            
+            // 显示模态框
+            new bootstrap.Modal(document.getElementById('reviewModal')).show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('获取申请详情失败');
+        });
+}
+
+// 显示集体申请审核
+function showGroupReview(appId) {
+    fetch(`/api/group-applications/${appId}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('applicationId').value = appId;
+            document.getElementById('applicationType').value = 'group';
+            document.getElementById('reviewModalTitle').textContent = '审核集体申请';
+            
+            // 显示申请详情
+            document.getElementById('applicationDetails').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>申请信息</h6>
+                        <p><strong>申请教师：</strong>${data.teacher_name || '未知教师'}</p>
+                        <p><strong>申请标题：</strong>${data.title}</p>
+                        <p><strong>类别：</strong>${data.category_name || '未知类别'}</p>
+                        <p><strong>学年：</strong>${data.academic_year}</p>
+                        <p><strong>成员数量：</strong>${data.members ? data.members.length : 0}</p>
+                        <p><strong>申请时间：</strong>${new Date(data.created_at).toLocaleString()}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>申请说明</h6>
+                        <p>${data.description}</p>
+                        ${data.evidence ? `<p><strong>证明材料：</strong><a href="/api/download/${data.evidence}" target="_blank" class="btn btn-sm btn-outline-primary">下载查看</a></p>` : ''}
+                        ${data.review_comment ? `<p><strong>审核意见：</strong>${data.review_comment}</p>` : ''}
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>成员名单</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>学号</th>
+                                        <th>姓名</th>
+                                        <th>班级</th>
+                                        <th>分值</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.members ? data.members.map(member => `
+                                        <tr>
+                                            <td>${member.student_id || ''}</td>
+                                            <td>${member.student_name || ''}</td>
+                                            <td>${member.class_name || ''}</td>
+                                            <td>${member.score}</td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="4" class="text-center">暂无成员信息</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // 重置表单
+            document.getElementById('reviewForm').reset();
+            document.getElementById('reviewComment').value = data.review_comment || '';
+            
+            // 如果是已审核的申请，禁用表单
+            const isReviewed = data.status !== 'pending';
+            document.querySelectorAll('#reviewForm input, #reviewForm textarea').forEach(el => {
+                el.disabled = isReviewed;
+            });
+            document.getElementById('submitReviewBtn').style.display = isReviewed ? 'none' : 'block';
+            
+            // 显示模态框
+            new bootstrap.Modal(document.getElementById('reviewModal')).show();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('获取申请详情失败');
+        });
+}
+
+// 提交审核
+function submitReview() {
+    const applicationId = document.getElementById('applicationId').value;
+    const applicationType = document.getElementById('applicationType').value;
+    const status = document.querySelector('input[name="status"]:checked');
+    const reviewComment = document.getElementById('reviewComment').value;
+    
+    if (!status) {
+        alert('请选择审核结果');
+        return;
+    }
+    
+    if (status.value === 'rejected' && !reviewComment.trim()) {
+        alert('驳回申请需要填写审核意见');
+        return;
+    }
+    
+    const data = {
+        status: status.value,
+        review_comment: reviewComment
+    };
+    
+    // 根据类型选择不同的API端点
+    const apiUrl = applicationType === 'individual' 
+        ? `/api/applications/${applicationId}/review`
+        : `/api/group-applications/${applicationId}/review`;
+    
+    fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.message || '审核失败');
+            });
+        }
+        return response.json();
+    })
+    .then(result => {
+        alert('审核完成');
+        bootstrap.Modal.getInstance(document.getElementById('reviewModal')).hide();
+        refreshCurrentTab();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('审核失败: ' + error.message);
+    });
+}
+</script>
+{% endblock %}
+

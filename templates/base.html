@@ -19,11 +19,9 @@
                 <div class="navbar-nav" style="display: flex; flex-direction: row; margin-left: auto;">
                     {% if session.user.role == 'admin' %}
                         <!-- 管理员菜单 -->
-                        <a class="nav-link" href="{{ url_for('application_review') }}" style="color: white; margin-right: 1rem;">审核申请</a>
-                        <a class="nav-link" href="{{ url_for('group_application_review') }}" style="color: white; margin-right: 1rem;">集体申请审核</a>
+                        <a class="nav-link" href="{{ url_for('application_review') }}" style="color: white; margin-right: 1rem;">申请审核</a>
                         <a class="nav-link" href="{{ url_for('statistics') }}" style="color: white; margin-right: 1rem;">数据统计</a>
-                        <a class="nav-link" href="{{ url_for('announcement_manage') }}" style="color: white; margin-right: 1rem;">公告管理</a>
-                        <a class="nav-link" href="{{ url_for('academic_year_manage') }}" style="color: white; margin-right: 1rem;">学年管理</a>
+                        <a class="nav-link" href="{{ url_for('system_manage') }}" style="color: white; margin-right: 1rem;">系统管理</a>
                     {% elif session.user.role == 'teacher' %}
                         <!-- 教师菜单 -->
                     {% else %}

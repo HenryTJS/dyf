@@ -24,10 +24,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
-# PythonAnywhere 静态文件配置
-app.static_folder = 'static'
-app.template_folder = 'templates'
-
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -39,21 +35,144 @@ print(f"上传目录: {app.config['UPLOAD_FOLDER']}")
 # 初始化扩展
 db = SQLAlchemy(app)
 
-# 数据库模型
+# ==================== 类别相关常量定义 ====================
+# 教师端可管理的主类别
+TEACHER_MAIN_CATEGORIES = ['集体活动分', '学术科研分', '文体竞赛分', '任职分', '奖励分', '社会服务分', '扣分']
+
+# 学生端可申请的主类别
+STUDENT_MAIN_CATEGORIES = ['思想政治理论分', '学术科研分', '社会服务分', '奖励分']
+
+# 教师端可管理的子类别（按主类别分组）
+TEACHER_ALLOWED_CHILDREN = {
+    '集体活动分': ['集体活动分'],
+    '学术科研分': ['竞赛'],
+    '文体竞赛分': ['文艺竞赛', '体育竞赛'],
+    '任职分': ['学生组织', '社团', '班级'],
+    '奖励分': ['院级奖励', '校级奖励'],
+    '社会服务分': ['社会实践'],
+    '扣分': ['扣分']
+}
+
+# 学生端可申请的子类别（按主类别分组）
+STUDENT_ALLOWED_CHILDREN = {
+    '思想政治理论分': ['思想政治理论'],
+    '学术科研分': ['专利', '专著', '论文'],
+    '社会服务分': ['工时', '挂职锻炼', '政府见习'],
+    '奖励分': ['市级奖励', '省级奖励', '国家级奖励']
+}
+
+# 纯教师端主类别（所有子类别都是教师端管理）
+PURE_TEACHER_CATEGORIES = ['集体活动分', '文体竞赛分', '任职分', '扣分']
+
+# 教师端子类别（混合主类别中的教师端子类别）
+TEACHER_SUBCATEGORIES = {
+    '社会服务分': ['社会实践'],
+    '学术科研分': ['竞赛'],
+    '奖励分': ['院级奖励', '校级奖励']
+}
+
+# 所有主类别列表
+ALL_MAIN_CATEGORIES = ['思想政治理论分', '社会服务分', '集体活动分', '学术科研分', '文体竞赛分', '奖励分', '任职分', '扣分']
+
+# 主类别分数上限
+CATEGORY_MAX_LIMITS = {
+    '思想政治理论分': 3,
+    '社会服务分': 4,
+    '集体活动分': 3,
+    '学术科研分': 10,
+    '文体竞赛分': 6,
+    '奖励分': 5,
+    '任职分': 4,
+    '扣分': 0
+}
+
+# 子类别分数上限（单个子类别的最高分）
+SUBCATEGORY_MAX_LIMITS = {
+    '工时': 1,  # 工时最多加1分
+    # 可以继续添加其他有特殊限制的子类别
+}
+
+# 特殊处理的类别
+SPECIAL_CATEGORY_ZHIREN = '任职分'  # 任职分只能取最高1项，不能叠加
+
+# ==================== 工具函数 ====================
+def is_teacher_category(main_category_name, sub_category_name=None):
+    """判断类别是否为教师端管理"""
+    if main_category_name in PURE_TEACHER_CATEGORIES:
+        return True
+    if sub_category_name and main_category_name in TEACHER_SUBCATEGORIES:
+        return sub_category_name in TEACHER_SUBCATEGORIES[main_category_name]
+    return False
+
+def calculate_category_score(main_category, scores):
+    """计算主类别最终分数（应用上限和特殊规则）
+    注意：这个函数接收的是简单分数列表，不包含子类别信息
+    如果需要应用子类别限制，请使用 calculate_category_score_with_subcategory
+    """
+    max_limit = CATEGORY_MAX_LIMITS.get(main_category, 100)
+    
+    if main_category == SPECIAL_CATEGORY_ZHIREN:
+        # 任职分：只能取最高1项
+        max_score = max(scores) if scores else 0
+        return min(max_score, max_limit)
+    else:
+        # 其他类别：累加但不超过主类别最高分
+        total_score = sum(scores)
+        return min(total_score, max_limit)
+
+def calculate_category_score_with_subcategory(main_category, records):
+    """计算主类别最终分数（应用子类别和主类别上限）
+    
+    Args:
+        main_category: 主类别名称
+        records: 记录列表，每条记录需包含 'score' 和 'category_name' 字段
+    
+    Returns:
+        最终分数
+    """
+    # 按子类别分组
+    subcategory_scores = {}
+    for record in records:
+        sub_name = record.get('category_name', '')
+        if sub_name not in subcategory_scores:
+            subcategory_scores[sub_name] = []
+        subcategory_scores[sub_name].append(record['score'])
+    
+    # 计算每个子类别的分数（应用子类别上限）
+    total_score = 0
+    for sub_name, scores in subcategory_scores.items():
+        sub_total = sum(scores)
+        # 应用子类别上限（如工时最多1分）
+        if sub_name in SUBCATEGORY_MAX_LIMITS:
+            sub_total = min(sub_total, SUBCATEGORY_MAX_LIMITS[sub_name])
+        total_score += sub_total
+    
+    # 应用主类别上限和特殊规则
+    max_limit = CATEGORY_MAX_LIMITS.get(main_category, 100)
+    
+    if main_category == SPECIAL_CATEGORY_ZHIREN:
+        # 任职分：只能取最高1项
+        all_scores = [r['score'] for r in records]
+        max_score = max(all_scores) if all_scores else 0
+        return min(max_score, max_limit)
+    else:
+        # 其他类别：累加但不超过主类别最高分
+        return min(total_score, max_limit)
+
+# ==================== 数据库模型 ====================
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(120), nullable=False)
     name = db.Column(db.String(100), nullable=False)
-    # 学生字段：对学生必填；为支持教师/审核端导入，设为可空
+    # 学生字段
     student_id = db.Column(db.String(20), unique=True, nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
-    # 新增学生字段
-    college = db.Column(db.String(100), nullable=True)  # 书院
-    grade = db.Column(db.String(20), nullable=True)    # 年级
+    college = db.Column(db.String(100), nullable=True)
+    grade = db.Column(db.String(20), nullable=True)
     # 教师/审核端字段
     employee_id = db.Column(db.String(20), unique=True, nullable=True)
-    teacher_college = db.Column(db.String(100), nullable=True)  # 教师学院
+    teacher_college = db.Column(db.String(100), nullable=True)
     role = db.Column(db.String(20), default='student')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -97,7 +216,6 @@ class ScoreApplication(db.Model):
     status = db.Column(db.String(20), default='pending')
     reviewer_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     review_comment = db.Column(db.Text)
-    # 学年，形如 2027-2028 / 2028-2029
     academic_year = db.Column(db.String(20))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reviewed_at = db.Column(db.DateTime)
@@ -155,7 +273,6 @@ class GroupApplication(db.Model):
     status = db.Column(db.String(20), default='pending')
     reviewer_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     review_comment = db.Column(db.Text)
-    semester = db.Column(db.String(20), nullable=False)
     academic_year = db.Column(db.String(20), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reviewed_at = db.Column(db.DateTime)
@@ -187,24 +304,11 @@ def api_get_categories():
 
     # 角色下的主类别与允许的子类别
     if user_role == 'teacher':
-        main_names = ['集体活动分', '学术科研分', '文体竞赛分', '任职分', '奖励分', '社会服务分', '扣分']
-        allowed_children = {
-            '集体活动分': ['集体活动分'],
-            '学术科研分': ['竞赛'],
-            '文体竞赛分': ['文艺竞赛', '体育竞赛'],
-            '任职分': ['学生组织', '社团', '班级'],
-            '奖励分': ['院级奖励', '校级奖励'],
-            '社会服务分': ['社会实践'],
-            '扣分': ['扣分']
-        }
+        main_names = TEACHER_MAIN_CATEGORIES
+        allowed_children = TEACHER_ALLOWED_CHILDREN
     else:
-        main_names = ['思想政治理论分', '学术科研分', '社会服务分', '奖励分']
-        allowed_children = {
-            '思想政治理论分': ['思想政治理论'],
-            '学术科研分': ['专利', '专著', '论文'],
-            '社会服务分': ['工时', '挂职锻炼', '政府见习'],
-            '奖励分': ['市级奖励', '省级奖励', '国家级奖励']
-        }
+        main_names = STUDENT_MAIN_CATEGORIES
+        allowed_children = STUDENT_ALLOWED_CHILDREN
 
     # 获取主类别
     main_categories = ScoreCategory.query.filter(
@@ -253,9 +357,7 @@ def api_get_all_categories():
     result = []
     for main_cat in main_categories:
         # 判断主类别来源类型
-        source_type = '学生端'  # 默认学生端
-        if main_cat.name in ['集体活动分', '文体竞赛分', '任职分', '扣分']:
-            source_type = '教师端'
+        source_type = '教师端' if main_cat.name in PURE_TEACHER_CATEGORIES else '学生端'
         
         category_data = {
             'id': main_cat.id,
@@ -270,24 +372,8 @@ def api_get_all_categories():
         # 获取子类别并判断每个子类别的来源类型
         subcategories = ScoreCategory.query.filter_by(parent_id=main_cat.id).all()
         for sub_cat in subcategories:
-            # 判断子类别是否为学生端可申请
-            sub_source_type = '学生端'  # 默认学生端
-            
-            if main_cat.name == '社会服务分':
-                # 社会服务分：除了"社会实践"外，其他学生端都能申请
-                if sub_cat.name == '社会实践':
-                    sub_source_type = '教师端'
-            elif main_cat.name == '学术科研分':
-                # 学术科研分：除了"竞赛"外，其他学生端都能申请
-                if sub_cat.name == '竞赛':
-                    sub_source_type = '教师端'
-            elif main_cat.name == '奖励分':
-                # 奖励分：后三个学生端都能申请（市级奖励、省级奖励、国家级奖励）
-                if sub_cat.name in ['院级奖励', '校级奖励']:
-                    sub_source_type = '教师端'
-            elif main_cat.name in ['集体活动分', '文体竞赛分', '任职分', '扣分']:
-                # 这些主类别的所有子类别都是教师端管理
-                sub_source_type = '教师端'
+            # 判断子类别是否为教师端管理
+            sub_source_type = '教师端' if is_teacher_category(main_cat.name, sub_cat.name) else '学生端'
             
             category_data['children'].append({
                 'id': sub_cat.id,
@@ -309,10 +395,9 @@ def api_get_teacher_categories():
         return jsonify({'error': '未登录'}), 401
     
     # 获取教师端管理的主类别
-    teacher_category_names = ['集体活动分', '学术科研分', '文体竞赛分', '任职分', '奖励分', '社会服务分', '扣分']
     main_categories = ScoreCategory.query.filter(
         ScoreCategory.parent_id == None,
-        ScoreCategory.name.in_(teacher_category_names)
+        ScoreCategory.name.in_(TEACHER_MAIN_CATEGORIES)
     ).all()
     
     result = []
@@ -330,28 +415,8 @@ def api_get_teacher_categories():
         # 获取子类别，并根据规则设置权限
         subcategories = ScoreCategory.query.filter_by(parent_id=main_cat.id).all()
         for sub_cat in subcategories:
-            sub_source_type = '学生端'  # 默认学生端
-            
-            if main_cat.name == '集体活动分':
-                sub_source_type = '教师端'
-            elif main_cat.name == '文体竞赛分':
-                sub_source_type = '教师端'
-            elif main_cat.name == '任职分':
-                sub_source_type = '教师端'
-            elif main_cat.name == '扣分':
-                sub_source_type = '教师端'
-            elif main_cat.name == '社会服务分':
-                if sub_cat.name == '社会实践':
-                    sub_source_type = '教师端'
-            elif main_cat.name == '学术科研分':
-                if sub_cat.name == '竞赛':
-                    sub_source_type = '教师端'
-            elif main_cat.name == '奖励分':
-                if sub_cat.name in ['院级奖励', '校级奖励']:
-                    sub_source_type = '教师端'
-            
             # 只添加教师端管理的子类别
-            if sub_source_type == '教师端':
+            if is_teacher_category(main_cat.name, sub_cat.name):
                 category_data['children'].append({
                     'id': sub_cat.id,
                     'name': sub_cat.name,
@@ -698,24 +763,16 @@ def api_create_group_application():
         print("缺少证明材料，返回400错误")
         return jsonify({'message': '请上传证明材料'}), 400
 
-    # 根据当前日期推断学期
-    current_month = datetime.now().month
-    if current_month >= 9 or current_month <= 1:  # 9月-1月为第一学期
-        semester = '第一学期'
-    else:  # 2月-8月为第二学期
-        semester = '第二学期'
-
     group_app = GroupApplication(
         teacher_user_id=teacher_user_id,
         category_id=category_id,
-        title=description,  # 使用description作为title
+        title=description,
         description=description,
         evidence=evidence_filename,
-        semester=semester,
         academic_year=academic_year
     )
     db.session.add(group_app)
-    db.session.flush()  # 获取ID
+    db.session.flush()
 
     # 读取成员Excel/CSV：字段 学号, 姓名, 班级, 分值
     if 'members' not in request.files:
@@ -797,15 +854,11 @@ def api_get_all_group_applications():
     elif role == 'teacher':
         # 教师端：只返回自己提交的集体申请
         apps = GroupApplication.query.filter_by(teacher_user_id=user_id).order_by(GroupApplication.created_at.desc()).all()
-    elif role == 'student':
+    else:
         # 学生端：返回自己参与的集体申请
-        # 通过 GroupApplicationMember 表查找包含该学生的集体申请
         member_records = GroupApplicationMember.query.filter_by(student_user_id=user_id).all()
         app_ids = [m.group_application_id for m in member_records]
         apps = GroupApplication.query.filter(GroupApplication.id.in_(app_ids)).order_by(GroupApplication.created_at.desc()).all() if app_ids else []
-    else:
-        # 其他角色：返回空
-        apps = []
     
     result = []
     for ga in apps:
@@ -829,7 +882,7 @@ def api_get_all_group_applications():
             'member_count': len(ga.members),
             'teacher_name': ga.teacher.name if ga.teacher else '未知教师',
             'category_name': ga.category.name if ga.category else '未知类别',
-            'student_score': student_score,  # 学生在此申请中的分数
+            'student_score': student_score,
             'evidence': ga.evidence,
             'review_comment': ga.review_comment,
             'reviewed_at': ga.reviewed_at.isoformat() if ga.reviewed_at else None
@@ -1038,8 +1091,6 @@ def api_review_group_application(gid):
         print(f"审核集体申请 {gid} 失败: {str(e)}")
         return jsonify({'message': f'审核失败: {str(e)}'}), 500
 
-
-
 @app.route('/api/statistics', methods=['GET'])
 def api_get_statistics():
     if 'user' not in session or session['user']['role'] != 'admin':
@@ -1101,22 +1152,9 @@ def api_get_my_scores():
     result = []
     total_score = 0
     
-    # 定义教师端和学生端可申请的主类别
-    teacher_categories = [
-        '集体活动分',
-        '学术科研分',
-        '文体竞赛分',
-        '任职分',
-        '奖励分',
-        '社会服务分'
-    ]
-    
-    student_categories = [
-        '思想政治理论分',
-        '学术科研分',
-        '社会服务分',
-        '奖励分'
-    ]
+    # 使用定义的类别常量
+    teacher_categories = TEACHER_MAIN_CATEGORIES
+    student_categories = STUDENT_MAIN_CATEGORIES
     
     # 按主类别分组统计，应用分数上限限制
     category_scores = {}
@@ -1153,29 +1191,14 @@ def api_get_my_scores():
         # 计算该主类别的原始总分
         total_category_score = sum([r['score'] for r in records])
         
-        # 设置主类别最高分限制
-        max_limits = {
-            '思想政治理论分': 3,
-            '社会服务分': 4,
-            '集体活动分': 3,
-            '学术科研分': 10,
-            '文体竞赛分': 6,
-            '奖励分': 5,  # 奖励分项目类别最高5分
-            '扣分': 0  # 扣分无下限
-        }
-        
-        max_limit = max_limits.get(main_category, 100)
-        
-        if main_category == '任职分':
-            # 任职分：只能取最高1项（不能叠加）
-            max_score = max([r['score'] for r in records])
-            final_score = min(max_score, 4)  # 任职分最高4分
-        else:
-            # 其他类别：累加但不超过主类别最高分
-            final_score = min(total_category_score, max_limit)
+        # 使用新函数计算最终分数（应用子类别限制，如工时最多1分）
+        final_score = calculate_category_score_with_subcategory(main_category, records)
         
         final_scores[main_category] = final_score
         total_score += final_score
+        
+        # 获取上限
+        max_limit = CATEGORY_MAX_LIMITS.get(main_category, 100)
         
         # 为每个记录添加计算后的分数和主类别信息
         for record in records:
@@ -1248,6 +1271,7 @@ def api_get_all_scores():
     academic_year = request.args.get('academic_year', current_year.year_name if current_year else None)
     college = request.args.get('college')  # 书院筛选
     grade = request.args.get('grade')      # 年级筛选
+    class_name = request.args.get('class_name')  # 班级筛选
 
     # 查询所有学生的德育分记录，需要应用项目类别上限
     base = db.session.query(
@@ -1278,6 +1302,10 @@ def api_get_all_scores():
     # 按年级筛选
     if grade:
         base = base.filter(User.grade == grade)
+    
+    # 按班级筛选
+    if class_name:
+        base = base.filter(User.class_name == class_name)
 
     # 获取所有记录
     records = base.all()
@@ -1312,37 +1340,20 @@ def api_get_all_scores():
             if main_category_name not in student_scores[user_id]['category_scores']:
                 student_scores[user_id]['category_scores'][main_category_name] = []
             
-            student_scores[user_id]['category_scores'][main_category_name].append(record.score)
+            # 存储包含子类别信息的记录
+            student_scores[user_id]['category_scores'][main_category_name].append({
+                'score': record.score,
+                'category_name': record.category_name
+            })
     
     # 应用项目类别上限计算最终分数
     result = []
     for user_id, data in student_scores.items():
         total_score = 0
         
-        for main_category, scores in data['category_scores'].items():
-            # 设置主类别最高分限制
-            max_limits = {
-                '思想政治理论分': 3,
-                '社会服务分': 4,
-                '集体活动分': 3,
-                '学术科研分': 10,
-                '文体竞赛分': 6,
-                '奖励分': 5,  # 奖励分项目类别最高5分
-                '任职分': 4,
-                '扣分': 0
-            }
-            
-            max_limit = max_limits.get(main_category, 100)
-            
-            if main_category == '任职分':
-                # 任职分：只能取最高1项（不能叠加）
-                max_score = max(scores) if scores else 0
-                final_score = min(max_score, 4)
-            else:
-                # 其他类别：累加但不超过主类别最高分
-                total_category_score = sum(scores)
-                final_score = min(total_category_score, max_limit)
-            
+        for main_category, records in data['category_scores'].items():
+            # 使用新函数计算最终分数（应用子类别限制，如工时最多1分）
+            final_score = calculate_category_score_with_subcategory(main_category, records)
             total_score += final_score
         
         # 设置总分最大值(100)和最小值(0)
@@ -1483,6 +1494,13 @@ def api_get_statistics_filters():
         User.grade != ''
     ).distinct().all()
     
+    # 获取所有班级
+    classes = db.session.query(User.class_name).filter(
+        User.role == 'student',
+        User.class_name.isnot(None),
+        User.class_name != ''
+    ).distinct().all()
+    
     # 从学年管理表获取所有学年
     academic_years = AcademicYear.query.order_by(AcademicYear.year_name.desc()).all()
     academic_year_list = [year.year_name for year in academic_years]
@@ -1494,6 +1512,7 @@ def api_get_statistics_filters():
     return jsonify({
         'colleges': [c[0] for c in colleges],
         'grades': [g[0] for g in grades],
+        'classes': [c[0] for c in classes],
         'academicYears': academic_year_list,
         'defaultAcademicYear': default_academic_year
     })
@@ -1570,13 +1589,14 @@ def api_export_all_scores():
             if main_category_name not in student_scores[user_id]['category_scores']:
                 student_scores[user_id]['category_scores'][main_category_name] = []
             
-            student_scores[user_id]['category_scores'][main_category_name].append(record.score)
+            # 存储包含子类别信息的记录
+            student_scores[user_id]['category_scores'][main_category_name].append({
+                'score': record.score,
+                'category_name': record.category_name
+            })
     
-    # 定义所有项目类别
-    all_categories = [
-        '思想政治理论分', '社会服务分', '集体活动分', 
-        '学术科研分', '文体竞赛分', '奖励分', '任职分', '扣分'
-    ]
+    # 使用定义的所有类别常量
+    all_categories = ALL_MAIN_CATEGORIES
     
     # 应用项目类别上限计算最终分数
     data = []
@@ -1584,30 +1604,9 @@ def api_export_all_scores():
         category_scores = {}
         total_score = 0
         
-        for main_category, scores in data_item['category_scores'].items():
-            # 设置主类别最高分限制
-            max_limits = {
-                '思想政治理论分': 3,
-                '社会服务分': 4,
-                '集体活动分': 3,
-                '学术科研分': 10,
-                '文体竞赛分': 6,
-                '奖励分': 5,
-                '任职分': 4,
-                '扣分': 0
-            }
-            
-            max_limit = max_limits.get(main_category, 100)
-            
-            if main_category == '任职分':
-                # 任职分：只能取最高1项（不能叠加）
-                max_score = max(scores) if scores else 0
-                final_score = min(max_score, 4)
-            else:
-                # 其他类别：累加但不超过主类别最高分
-                total_category_score = sum(scores)
-                final_score = min(total_category_score, max_limit)
-            
+        for main_category, records in data_item['category_scores'].items():
+            # 使用新函数计算最终分数（应用子类别限制，如工时最多1分）
+            final_score = calculate_category_score_with_subcategory(main_category, records)
             category_scores[main_category] = final_score
             total_score += final_score
         
@@ -1886,38 +1885,7 @@ def init_db():
                 cur.execute("ALTER TABLE score_record_new RENAME TO score_record")
                 conn.commit()
             
-            # 检查是否有semester字段，如果有则删除（因为我们现在使用academic_year）
-            if 'semester' in record_cols:
-                # 由于SQLite不支持DROP COLUMN，我们需要重建表
-                cur.execute("BEGIN TRANSACTION")
-                cur.execute("""
-                    CREATE TABLE score_record_new (
-                        id INTEGER PRIMARY KEY,
-                        user_id INTEGER NOT NULL,
-                        category_id INTEGER NOT NULL,
-                        score INTEGER NOT NULL,
-                        source VARCHAR(100) NOT NULL,
-                        description TEXT,
-                        academic_year VARCHAR(20) NOT NULL,
-                        created_at DATETIME,
-                        application_id INTEGER,
-                        group_application_id INTEGER,
-                        FOREIGN KEY (user_id) REFERENCES user (id),
-                        FOREIGN KEY (category_id) REFERENCES score_category (id)
-                    )
-                """)
-                # 复制数据，跳过semester列
-                cur.execute("""
-                    INSERT INTO score_record_new 
-                    (id, user_id, category_id, score, source, description, academic_year, created_at, application_id, group_application_id)
-                    SELECT id, user_id, category_id, score, source, description, academic_year, created_at, application_id, group_application_id
-                    FROM score_record
-                """)
-                cur.execute("DROP TABLE score_record")
-                cur.execute("ALTER TABLE score_record_new RENAME TO score_record")
-                conn.commit()
-            
-            # 检查GroupApplication表列，新增academic_year
+            # 检查GroupApplication表列
             cur.execute("PRAGMA table_info(group_application)")
             group_cols = {r[1]: r for r in cur.fetchall()}
             if 'academic_year' not in group_cols:
@@ -2091,17 +2059,11 @@ def teacher_group_applications():
 
 @app.route('/admin/review')
 def application_review():
+    """统一的审核页面（个人申请和集体申请）"""
     if 'user' not in session or session['user']['role'] != 'admin':
         flash('需要管理员权限', 'error')
         return redirect(url_for('login'))
-    return render_template('application_review.html')
-
-@app.route('/admin/group-review')
-def group_application_review():
-    if 'user' not in session or session['user']['role'] != 'admin':
-        flash('需要管理员权限', 'error')
-        return redirect(url_for('login'))
-    return render_template('group_application_review.html')
+    return render_template('unified_review.html')
 
 @app.route('/admin/statistics')
 def statistics():
@@ -2110,19 +2072,13 @@ def statistics():
         return redirect(url_for('login'))
     return render_template('statistics.html')
 
-@app.route('/admin/announcements')
-def announcement_manage():
+@app.route('/admin/system')
+def system_manage():
+    """统一的系统管理页面（公告管理和学年管理）"""
     if 'user' not in session or session['user']['role'] != 'admin':
         flash('需要管理员权限', 'error')
         return redirect(url_for('login'))
-    return render_template('announcement_manage.html')
-
-@app.route('/admin/academic-years')
-def academic_year_manage():
-    if 'user' not in session or session['user']['role'] != 'admin':
-        flash('需要管理员权限', 'error')
-        return redirect(url_for('login'))
-    return render_template('academic_year_manage.html')
+    return render_template('system_manage.html')
 
 @app.route('/api/categories/<int:category_id>', methods=['GET'])
 def api_get_category_info(category_id):
@@ -2192,28 +2148,9 @@ def api_calculate_scores():
     # 应用特殊规则计算最终分数
     final_scores = {}
     
-    for main_category, scores in category_scores.items():
-        if main_category == '任职分':
-            # 任职分：只能取最高1项（不能叠加）
-            max_score = max([s['score'] for s in scores])
-            final_scores[main_category] = min(max_score, 4)  # 大类最高4分
-        else:
-            # 其他类别：累加但不超过大类最高分
-            total_category_score = sum([s['score'] for s in scores])
-            
-            # 设置大类最高分限制
-            max_limits = {
-                '思想政治理论分': 3,
-                '社会服务分': 4,
-                '集体活动分': 3,
-                '学术科研分': 10,
-                '文体竞赛分': 6,
-                '奖励分': 5,
-                '扣分': 0  # 扣分无下限
-            }
-            
-            max_limit = max_limits.get(main_category, 100)
-            final_scores[main_category] = min(total_category_score, max_limit)
+    for main_category, records in category_scores.items():
+        # 使用新函数计算最终分数（应用子类别限制，如工时最多1分）
+        final_scores[main_category] = calculate_category_score_with_subcategory(main_category, records)
     
     # 计算总分（扣分特殊处理）
     positive_score = sum([score for category, score in final_scores.items() if category != '扣分'])

@@ -270,41 +270,21 @@ function loadFilters() {
                 gradeSelect.appendChild(option);
             });
             
-            // 加载班级选项
-            loadClassOptions();
+            // 填充班级选项（从后端API直接获取）
+            const classSelect = document.getElementById('classFilter');
+            classSelect.innerHTML = '<option value="">全部班级</option>';
+            if (data.classes && data.classes.length > 0) {
+                data.classes.sort();  // 排序班级
+                data.classes.forEach(class_name => {
+                    const option = document.createElement('option');
+                    option.value = class_name;
+                    option.textContent = class_name;
+                    classSelect.appendChild(option);
+                });
+            }
         })
         .catch(error => {
             console.error('Error loading filters:', error);
-            showErrorMessage('筛选选项加载失败，请刷新页面重试');
-        });
-}
-
-function loadClassOptions() {
-    // 获取所有班级选项
-    fetch('/api/scores/all')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            const classSelect = document.getElementById('classFilter');
-            classSelect.innerHTML = '<option value="">全部班级</option>';
-            const classes = [...new Set(data.map(item => item.class_name).filter(name => name))];
-            classes.forEach(class_name => {
-                const option = document.createElement('option');
-                option.value = class_name;
-                option.textContent = class_name;
-                classSelect.appendChild(option);
-            });
-        })
-        .catch(error => {
-            console.error('Error loading classes:', error);
-            // 班级筛选失败不影响主要功能，只显示警告
-            const classSelect = document.getElementById('classFilter');
-            classSelect.innerHTML = '<option value="">班级加载失败</option>';
-            showWarningMessage('班级选项加载失败，班级筛选功能不可用');
         });
 }
 
