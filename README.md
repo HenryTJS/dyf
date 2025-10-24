@@ -4,66 +4,110 @@
 
 ## ✨ 主要功能
 
-- **学生端**：个人德育分申请、查看德育分记录
-- **教师端**：集体德育分申请、学生德育分管理
-- **管理员端**：申请审核、学年管理、公告发布、数据统计
+### 学生端
 
-## 🚀 快速部署
+- 个人德育分申请提交
+- 查看德育分记录（按类别分组）
+- 查看个人申请和教师端集体申请记录
+- 按学年筛选查看德育分
+- 德育分数据导出
 
-### GitHub部署（推荐）
+### 教师端
 
-1. **克隆仓库**
-```bash
-git clone https://github.com/yourusername/your-repo-name.git
-cd your-repo-name
-```
+- 集体德育分申请（批量导入学生名单）
+- 查看已提交的集体申请状态
+- 管理教师端德育分类别
+- Excel/CSV格式学生名单导入
 
-2. **使用部署脚本**
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
+### 管理员端
 
-3. **在PythonAnywhere上配置Web应用**
-   - Source code: `/home/yourusername/mysite`
-   - WSGI file: `/home/yourusername/mysite/wsgi.py`
-   - 静态文件映射: `/static/` → `/home/yourusername/mysite/static/`
-   - 上传文件映射: `/uploads/` → `/home/yourusername/mysite/uploads/`
+- 个人申请审核
+- 集体申请审核
+- 学年管理
+- 公告发布与管理
+- 数据统计与分析
+- 德育分排行榜导出
 
 ## 📁 项目结构
 
-```
-├── wsgi.py                    # PythonAnywhere入口点
+```text
 ├── app.py                     # Flask应用主文件
-├── index.html                 # 静态主页
-├── deploy.sh                  # 本地部署脚本
-├── update.sh                  # 服务器更新脚本
 ├── requirements.txt           # Python依赖
 ├── static/                    # 静态文件
+│   ├── css/                   # 样式文件
+│   └── js/                    # JavaScript文件
 ├── templates/                 # HTML模板
+│   ├── base.html             # 基础模板
+│   ├── login.html            # 登录页面
+│   ├── my_scores.html        # 学生德育分查询
+│   ├── teacher_scores.html   # 教师端管理
+│   └── statistics.html       # 统计页面
 ├── instance/                  # 数据库文件
-└── uploads/                   # 上传文件
+│   └── moral_score.db        # SQLite数据库
+└── uploads/                   # 上传文件存储
 ```
 
-## 🔄 更新应用
+## 🚀 快速开始
 
-在PythonAnywhere服务器上运行：
+### 1. 安装依赖
+
 ```bash
-cd /home/yourusername/mysite
-chmod +x update.sh
-./update.sh
+pip install -r requirements.txt
 ```
 
-## 📖 详细文档
+### 2. 运行应用
 
-请查看 [PythonAnywhere部署说明.md](PythonAnywhere部署说明.md) 获取完整的部署指南。
+```bash
+python app.py
+```
+
+应用将在 <http://localhost:5000> 启动
+
+### 3. 默认账户
+
+首次使用时，系统会自动创建默认账户（在代码中配置）
 
 ## 🛠️ 技术栈
 
-- **后端**：Flask, SQLAlchemy
-- **前端**：HTML, CSS, JavaScript
+- **后端框架**：Flask 2.x
+- **ORM**：SQLAlchemy
 - **数据库**：SQLite
-- **部署**：PythonAnywhere
+- **前端**：HTML5, CSS3, JavaScript (原生)
+- **UI框架**：Bootstrap 4
+- **图标库**：Font Awesome
+- **文件处理**：pandas, openpyxl
+
+## 📊 数据库模型
+
+- **User** - 用户表（学生、教师、管理员）
+- **ScoreCategory** - 德育分类别表
+- **ScoreApplication** - 个人申请表
+- **GroupApplication** - 集体申请表
+- **GroupApplicationMember** - 集体申请成员表
+- **ScoreRecord** - 德育分记录表
+- **AcademicYear** - 学年管理表
+- **Announcement** - 公告表
+
+## ✨ 核心特性
+
+### 德育分计算规则
+
+- 支持多个类别的分数累加
+- 各类别设有上限限制
+- 任职分取最高项（不叠加）
+- 总分限制在0-100分之间
+
+### 文件上传
+
+- 支持PDF格式证明材料上传
+- 支持Excel/CSV格式学生名单导入
+- 文件大小限制：10MB
+
+### 数据导出
+
+- 个人德育分导出（Excel格式）
+- 全校德育分排行榜导出
+- 支持按学年、书院、年级筛选
 
 ## 📝 许可证
 
@@ -73,9 +117,6 @@ chmod +x update.sh
 
 欢迎提交 Issue 和 Pull Request！
 
-## 📞 支持
+## 📞 联系方式
 
-如有问题，请查看：
-1. 部署说明文档
-2. PythonAnywhere官方文档
-3. GitHub Issues页面
+如有问题或建议，请通过 GitHub Issues 反馈。
