@@ -147,6 +147,12 @@ function submitApplication() {
     }
     formData.append('evidence', evidenceFile);
 
+    // 显示提交状态
+    const submitBtn = document.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 提交中...';
+    submitBtn.disabled = true;
+
     fetch('/api/applications', {
         method: 'POST',
         body: formData
@@ -164,6 +170,10 @@ function submitApplication() {
     .catch(error => {
         console.error('Error:', error);
         alert('申请提交失败，请重试');
+    })
+    .finally(() => {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     });
 }
 </script>

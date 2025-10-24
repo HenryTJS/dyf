@@ -51,29 +51,40 @@
                             </div>
                             <div class="card-body">
                                 <div class="row">
-                                    <div class="col-md-3">
+                                    <div class="col">
                                         <label for="academicYearFilter" class="form-label">学年</label>
                                         <select class="form-control" id="academicYearFilter">
                                             <option value="">加载中...</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col">
                                         <label for="collegeFilter" class="form-label">书院</label>
                                         <select class="form-control" id="collegeFilter">
                                             <option value="">全部书院</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col">
                                         <label for="gradeFilter" class="form-label">年级</label>
                                         <select class="form-control" id="gradeFilter">
                                             <option value="">全部年级</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col">
+                                        <label for="classFilter" class="form-label">班级</label>
+                                        <select class="form-control" id="classFilter">
+                                            <option value="">全部班级</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-auto">
                                         <label class="form-label">&nbsp;</label>
                                         <div>
-                                            <button class="btn btn-primary" onclick="applyFilters()">应用筛选</button>
-                                            <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+                                            <button class="btn btn-primary btn-sm" onclick="applyFilters()">应用筛选</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label">&nbsp;</label>
+                                        <div>
+                                            <button class="btn btn-secondary btn-sm" onclick="resetFilters()">重置</button>
                                         </div>
                                     </div>
                                 </div>
@@ -87,8 +98,15 @@
                     <div class="col-12">
                         <div class="card" style="height: 600px;">
                             <div class="card-header">
-                                <h5>学生德育分排行榜</h5>
-                                <small class="text-muted">按总分从高到低排序</small>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h5>学生德育分排行榜</h5>
+                                        <small class="text-muted">按总分从高到低排序</small>
+                                    </div>
+                                    <button class="btn btn-success btn-sm" onclick="exportRanking()">
+                                        <i class="fas fa-download"></i> 导出排行榜
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body p-0" style="height: calc(100% - 80px);">
                                 <div class="table-responsive" style="height: 100%; overflow-y: auto;">
@@ -126,21 +144,74 @@
 let currentFilters = {
     academicYear: '',  // 默认不按学年筛选，显示所有数据
     college: '',
-    grade: ''
+    grade: '',
+    class_name: ''
 };
+
+// XSS防护函数
+function escapeHtml(text) {
+    if (text === null || text === undefined) {
+        return '';
+    }
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 显示错误消息
+function showErrorMessage(message) {
+    // 创建错误提示
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.innerHTML = `
+        <strong>错误：</strong> ${escapeHtml(message)}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    // 5秒后自动移除
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.parentNode.removeChild(alertDiv);
+        }
+    }, 5000);
+}
+
+// 显示警告消息
+function showWarningMessage(message) {
+    // 创建警告提示
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-warning alert-dismissible fade show position-fixed';
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.innerHTML = `
+        <strong>警告：</strong> ${escapeHtml(message)}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    // 3秒后自动移除
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.parentNode.removeChild(alertDiv);
+        }
+    }, 3000);
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     loadStatistics();
     loadFilters();
     loadRanking();
-    
-    // 每30秒自动刷新统计数据
-    setInterval(loadStatistics, 30000);
 });
 
 function loadStatistics() {
     fetch('/api/statistics')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             document.getElementById('total-users').textContent = data.totalUsers;
             document.getElementById('total-applications').textContent = data.totalApplications;
@@ -151,13 +222,19 @@ function loadStatistics() {
             document.getElementById('pending-group').textContent = data.pendingGroupApplications || 0;
         })
         .catch(error => {
-            console.error('Error:', error);
+            console.error('Error loading statistics:', error);
+            showErrorMessage('统计数据加载失败，请刷新页面重试');
         });
 }
 
 function loadFilters() {
     fetch('/api/statistics/filters')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             // 填充学年选项
             const academicYearSelect = document.getElementById('academicYearFilter');
@@ -192,9 +269,42 @@ function loadFilters() {
                 option.textContent = grade;
                 gradeSelect.appendChild(option);
             });
+            
+            // 加载班级选项
+            loadClassOptions();
         })
         .catch(error => {
-            console.error('Error:', error);
+            console.error('Error loading filters:', error);
+            showErrorMessage('筛选选项加载失败，请刷新页面重试');
+        });
+}
+
+function loadClassOptions() {
+    // 获取所有班级选项
+    fetch('/api/scores/all')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            const classSelect = document.getElementById('classFilter');
+            classSelect.innerHTML = '<option value="">全部班级</option>';
+            const classes = [...new Set(data.map(item => item.class_name).filter(name => name))];
+            classes.forEach(class_name => {
+                const option = document.createElement('option');
+                option.value = class_name;
+                option.textContent = class_name;
+                classSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading classes:', error);
+            // 班级筛选失败不影响主要功能，只显示警告
+            const classSelect = document.getElementById('classFilter');
+            classSelect.innerHTML = '<option value="">班级加载失败</option>';
+            showWarningMessage('班级选项加载失败，班级筛选功能不可用');
         });
 }
 
@@ -203,9 +313,15 @@ function loadRanking() {
     if (currentFilters.academicYear) params.append('academic_year', currentFilters.academicYear);
     if (currentFilters.college) params.append('college', currentFilters.college);
     if (currentFilters.grade) params.append('grade', currentFilters.grade);
+    if (currentFilters.class_name) params.append('class_name', currentFilters.class_name);
     
     fetch(`/api/scores/all?${params.toString()}`)
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             const tbody = document.getElementById('rankingBody');
             if (data.length === 0) {
@@ -216,18 +332,19 @@ function loadRanking() {
             tbody.innerHTML = data.map((student, index) => `
                 <tr>
                     <td>${index + 1}</td>
-                    <td>${student.name}</td>
-                    <td>${student.student_id}</td>
-                    <td>${student.class_name || '未设置'}</td>
-                    <td>${student.college || '未设置'}</td>
-                    <td>${student.grade || '未设置'}</td>
-                    <td><strong>${student.total_score}</strong></td>
+                    <td>${escapeHtml(student.name)}</td>
+                    <td>${escapeHtml(student.student_id)}</td>
+                    <td>${escapeHtml(student.class_name || '未设置')}</td>
+                    <td>${escapeHtml(student.college || '未设置')}</td>
+                    <td>${escapeHtml(student.grade || '未设置')}</td>
+                    <td><strong>${escapeHtml(student.total_score)}</strong></td>
                 </tr>
             `).join('');
         })
         .catch(error => {
-            console.error('Error:', error);
-            document.getElementById('rankingBody').innerHTML = '<tr><td colspan="7" class="text-center text-danger">加载失败</td></tr>';
+            console.error('Error loading ranking:', error);
+            document.getElementById('rankingBody').innerHTML = '<tr><td colspan="7" class="text-center text-danger">排行榜加载失败，请刷新页面重试</td></tr>';
+            showErrorMessage('排行榜数据加载失败，请刷新页面重试');
         });
 }
 
@@ -235,6 +352,7 @@ function applyFilters() {
     currentFilters.academicYear = document.getElementById('academicYearFilter').value;
     currentFilters.college = document.getElementById('collegeFilter').value;
     currentFilters.grade = document.getElementById('gradeFilter').value;
+    currentFilters.class_name = document.getElementById('classFilter').value;
     loadRanking();
 }
 
@@ -242,12 +360,40 @@ function resetFilters() {
     currentFilters.academicYear = '';
     currentFilters.college = '';
     currentFilters.grade = '';
+    currentFilters.class_name = '';
     
     document.getElementById('academicYearFilter').value = '';
     document.getElementById('collegeFilter').value = '';
     document.getElementById('gradeFilter').value = '';
+    document.getElementById('classFilter').value = '';
     
     loadRanking();
+}
+
+function exportRanking() {
+    // 获取当前筛选条件
+    const academicYear = currentFilters.academicYear;
+    const college = currentFilters.college;
+    const grade = currentFilters.grade;
+    const class_name = currentFilters.class_name;
+    
+    // 构建查询参数
+    const params = new URLSearchParams();
+    if (academicYear) params.append('academic_year', academicYear);
+    if (college) params.append('college', college);
+    if (grade) params.append('grade', grade);
+    if (class_name) params.append('class_name', class_name);
+    
+    // 创建下载链接
+    const downloadUrl = `/api/scores/export?${params.toString()}`;
+    
+    // 创建隐藏的下载链接并触发下载
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `德育分排行榜_${academicYear || '全部'}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 </script>
 {% endblock %}

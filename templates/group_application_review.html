@@ -10,6 +10,9 @@
                 <h4>集体申请审核</h4>
                 <small class="text-muted">审核教师提交的集体德育分申请</small>
                 <div class="float-end">
+                    <a href="{{ url_for('statistics') }}" class="btn btn-sm btn-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> 返回
+                    </a>
                     <button class="btn btn-sm btn-outline-primary" onclick="loadGroupApplications()">
                         <i class="fas fa-sync-alt"></i> 刷新
                     </button>

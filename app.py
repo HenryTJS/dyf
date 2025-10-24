@@ -808,12 +808,28 @@ def api_get_all_group_applications():
     elif role == 'teacher':
         # 教师端：只返回自己提交的集体申请
         apps = GroupApplication.query.filter_by(teacher_user_id=user_id).order_by(GroupApplication.created_at.desc()).all()
+    elif role == 'student':
+        # 学生端：返回自己参与的集体申请
+        # 通过 GroupApplicationMember 表查找包含该学生的集体申请
+        member_records = GroupApplicationMember.query.filter_by(student_user_id=user_id).all()
+        app_ids = [m.group_application_id for m in member_records]
+        apps = GroupApplication.query.filter(GroupApplication.id.in_(app_ids)).order_by(GroupApplication.created_at.desc()).all() if app_ids else []
     else:
         # 其他角色：返回空
         apps = []
     
     result = []
     for ga in apps:
+        # 如果是学生查看，返回该学生在此申请中的分数
+        student_score = None
+        if role == 'student':
+            member = GroupApplicationMember.query.filter_by(
+                group_application_id=ga.id,
+                student_user_id=user_id
+            ).first()
+            if member:
+                student_score = member.score
+        
         result.append({
             'id': ga.id,
             'title': ga.title,
@@ -823,7 +839,11 @@ def api_get_all_group_applications():
             'created_at': ga.created_at.isoformat(),
             'member_count': len(ga.members),
             'teacher_name': ga.teacher.name if ga.teacher else '未知教师',
-            'category_name': ga.category.name if ga.category else '未知类别'
+            'category_name': ga.category.name if ga.category else '未知类别',
+            'student_score': student_score,  # 学生在此申请中的分数
+            'evidence': ga.evidence,
+            'review_comment': ga.review_comment,
+            'reviewed_at': ga.reviewed_at.isoformat() if ga.reviewed_at else None
         })
     return jsonify(result)
 
@@ -1133,7 +1153,9 @@ def api_get_my_scores():
             'description': record.description,
             'academic_year': record.academic_year,
             'created_at': record.created_at.isoformat(),
-            'category_name': category.name
+            'category_name': category.name,
+            'category_id': category.id,
+            'group_application_id': record.group_application_id
         })
     
     # 应用特殊规则计算最终分数（项目类别层面限制）
@@ -1183,11 +1205,16 @@ def api_get_my_scores():
                 'academic_year': record['academic_year'],
                 'created_at': record['created_at'],
                 'category_name': record['category_name'],
+                'category_id': record.get('category_id'),
+                'group_application_id': record.get('group_application_id'),
                 'main_category': main_category,
                 'main_category_final_score': final_score,  # 主类别最终分数
                 'main_category_original_score': total_category_score,  # 主类别原始分数
                 'is_limited': total_category_score > max_limit  # 是否达到上限
             })
+    
+    # 设置总分最大值(100)和最小值(0)
+    total_score = max(0, min(100, total_score))
     
     return jsonify({'scores': result, 'totalScore': total_score, 'categoryScores': final_scores})
 
@@ -1332,6 +1359,9 @@ def api_get_all_scores():
                 final_score = min(total_category_score, max_limit)
             
             total_score += final_score
+        
+        # 设置总分最大值(100)和最小值(0)
+        total_score = max(0, min(100, total_score))
         
         result.append({
             'name': data['name'],
@@ -1489,6 +1519,9 @@ def api_export_all_scores():
         return jsonify({'message': '需要管理员权限'}), 403
 
     academic_year = request.args.get('academic_year')
+    college = request.args.get('college')
+    grade = request.args.get('grade')
+    class_name = request.args.get('class_name')
 
     # 使用与排行榜相同的逻辑，应用项目类别上限
     base = db.session.query(
@@ -1496,6 +1529,8 @@ def api_export_all_scores():
         User.name,
         User.student_id,
         User.class_name,
+        User.college,
+        User.grade,
         ScoreRecord.score,
         ScoreRecord.academic_year,
         ScoreCategory.name.label('category_name'),
@@ -1508,6 +1543,15 @@ def api_export_all_scores():
 
     if academic_year:
         base = base.filter(ScoreRecord.academic_year == academic_year)
+    
+    if college:
+        base = base.filter(User.college == college)
+    
+    if grade:
+        base = base.filter(User.grade == grade)
+    
+    if class_name:
+        base = base.filter(User.class_name == class_name)
 
     records = base.all()
     
@@ -1521,6 +1565,8 @@ def api_export_all_scores():
                 'name': record.name,
                 'student_id': record.student_id,
                 'class_name': record.class_name,
+                'college': record.college or '',
+                'grade': record.grade or '',
                 'category_scores': {},
                 'total_score': 0,
                 'record_count': 0
@@ -1541,9 +1587,16 @@ def api_export_all_scores():
             
             student_scores[user_id]['category_scores'][main_category_name].append(record.score)
     
+    # 定义所有项目类别
+    all_categories = [
+        '思想政治理论分', '社会服务分', '集体活动分', 
+        '学术科研分', '文体竞赛分', '奖励分', '任职分', '扣分'
+    ]
+    
     # 应用项目类别上限计算最终分数
     data = []
     for user_id, data_item in student_scores.items():
+        category_scores = {}
         total_score = 0
         
         for main_category, scores in data_item['category_scores'].items():
@@ -1570,24 +1623,47 @@ def api_export_all_scores():
                 total_category_score = sum(scores)
                 final_score = min(total_category_score, max_limit)
             
+            category_scores[main_category] = final_score
             total_score += final_score
         
+        # 设置总分最大值(100)和最小值(0)
+        total_score = max(0, min(100, total_score))
+        
+        # 为每个类别设置默认值0（如果没有记录）
+        for category in all_categories:
+            if category not in category_scores:
+                category_scores[category] = 0
+        
         data.append({
+            '排名': 0,  # 稍后计算
             '姓名': data_item['name'],
             '学号': data_item['student_id'],
             '班级': data_item['class_name'],
-            '总分': total_score,
-            '记录数': data_item['record_count']
+            '书院': data_item['college'],
+            '年级': data_item['grade'],
+            '基准分': 70,
+            '思想政治理论分': category_scores.get('思想政治理论分', 0),
+            '社会服务分': category_scores.get('社会服务分', 0),
+            '集体活动分': category_scores.get('集体活动分', 0),
+            '学术科研分': category_scores.get('学术科研分', 0),
+            '文体竞赛分': category_scores.get('文体竞赛分', 0),
+            '奖励分': category_scores.get('奖励分', 0),
+            '任职分': category_scores.get('任职分', 0),
+            '扣分': category_scores.get('扣分', 0),
+            '总分': total_score
         })
     
-    # 按总分排序
+    # 按总分排序并计算排名
     data.sort(key=lambda x: x['总分'], reverse=True)
+    for i, item in enumerate(data):
+        item['排名'] = i + 1
+    
     df = pd.DataFrame(data)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='学生德育分汇总')
+        df.to_excel(writer, index=False, sheet_name='集体德育分汇总')
     buf.seek(0)
-    filename = '学生德育分汇总.xlsx' if not academic_year else f'学生德育分汇总_{academic_year}.xlsx'
+    filename = '集体德育分汇总.xlsx' if not academic_year else f'集体德育分汇总_{academic_year}.xlsx'
     return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/api/announcements', methods=['GET'])
@@ -2023,7 +2099,7 @@ def teacher_group_application():
     return render_template('group_application.html')
 
 @app.route('/teacher/group-applications')
-def my_group_applications_page():
+def teacher_group_applications():
     if 'user' not in session or session['user']['role'] != 'teacher':
         return redirect(url_for('login'))
     return render_template('my_group_applications.html')

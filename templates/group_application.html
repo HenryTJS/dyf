@@ -44,9 +44,17 @@
                         </div>
                         <input type="file" class="form-control" id="members" accept=".xlsx,.xls,.csv" required />
                     </div>
-                    <button type="submit" class="btn btn-primary">提交集体申请</button>
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> 提交集体申请
+                            </button>
+                            <a href="{{ url_for('teacher_scores') }}" class="btn btn-secondary ml-2">
+                                <i class="fas fa-arrow-left"></i> 返回
+                            </a>
+                        </div>
+                    </div>
                 </form>
-                <div id="result" class="mt-4"></div>
             </div>
         </div>
     </div>
@@ -126,13 +134,27 @@ document.getElementById('group-form').addEventListener('submit', async (e) => {
     }
     fd.append('members', members);
 
-    const res = await fetch('/api/group-applications', { method: 'POST', body: fd });
-    const data = await res.json();
-    const div = document.getElementById('result');
-    if (res.ok) {
-        div.innerHTML = '<div class="alert alert-success">提交成功：编号 ' + data.id + '</div>';
-    } else {
-        div.innerHTML = '<div class="alert alert-danger">提交失败：' + (data.message || '未知错误') + '</div>';
+    // 显示提交状态
+    const submitBtn = document.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 提交中...';
+    submitBtn.disabled = true;
+
+    try {
+        const res = await fetch('/api/group-applications', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (res.ok) {
+            alert('集体申请提交成功！编号：' + data.id);
+            window.location.href = '/teacher/group-applications';
+        } else {
+            alert('申请提交失败：' + (data.message || '未知错误'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('申请提交失败，请重试');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     }
 });
 

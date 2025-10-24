@@ -51,16 +51,28 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function loadCategoryApplications() {
-    // 同时获取申请记录和德育分记录
+    // 同时获取申请记录、德育分记录和集体申请记录
     Promise.all([
         fetch(`/api/applications/my?category_id=${categoryId}`),
-        fetch('/api/scores/my')
+        fetch('/api/scores/my'),
+        fetch('/api/group-applications')
     ])
     .then(responses => Promise.all(responses.map(r => r.json())))
-    .then(([applications, scores]) => {
+    .then(([applications, scores, groupApplications]) => {
+        // 创建集体申请ID到集体申请详情的映射
+        const groupAppMap = {};
+        if (Array.isArray(groupApplications)) {
+            groupApplications.forEach(ga => {
+                groupAppMap[ga.id] = ga;
+            });
+        }
+        
         // 过滤出当前类别的德育分记录
+        // 只保留集体申请来源的记录，个人申请的记录会从 applications 中显示
         const categoryScores = scores.scores.filter(score => 
-            score.category_id === categoryId && score.source !== '初始德育分'
+            score.category_id === categoryId && 
+            score.source !== '初始德育分' && 
+            score.source === '集体申请'
         );
         
         // 合并申请记录和德育分记录
@@ -68,15 +80,26 @@ function loadCategoryApplications() {
             ...applications.map(app => ({
                 ...app,
                 type: 'application',
+                recordType: '个人申请',
                 status: app.status
             })),
-            ...categoryScores.map(score => ({
-                ...score,
-                type: 'score',
-                status: '已通过',
-                title: score.description,
-                source: score.source
-            }))
+            ...categoryScores.map(score => {
+                // 如果是集体申请来源，从groupAppMap中获取详细信息
+                let groupAppDetails = null;
+                if (score.source === '集体申请' && score.group_application_id) {
+                    groupAppDetails = groupAppMap[score.group_application_id];
+                }
+                
+                return {
+                    ...score,
+                    type: score.source === '集体申请' ? 'group' : 'score',
+                    recordType: score.source === '集体申请' ? '教师端集体申请' : '已通过的德育分',
+                    status: '已通过',
+                    title: score.description,
+                    source: score.source,
+                    groupAppDetails: groupAppDetails
+                };
+            })
         ];
         
         // 按时间排序
@@ -108,6 +131,7 @@ function displayApplications(applications) {
                 statusClass = 'warning';
                 break;
             case 'approved':
+            case '已通过':
                 statusBadge = '已通过';
                 statusClass = 'success';
                 break;
@@ -116,12 +140,53 @@ function displayApplications(applications) {
                 statusClass = 'danger';
                 break;
             default:
-                statusBadge = '未知';
+                statusBadge = app.status || '未知';
                 statusClass = 'secondary';
         }
         
-        const recordType = app.type === 'application' ? '申请记录' : '德育分记录';
-        const recordTypeClass = app.type === 'application' ? 'primary' : 'success';
+        // 根据类型设置标签
+        let recordTypeBadge = '';
+        let recordTypeClass = '';
+        if (app.type === 'application') {
+            recordTypeBadge = '个人申请';
+            recordTypeClass = 'primary';
+        } else if (app.type === 'group') {
+            recordTypeBadge = '教师端集体申请';
+            recordTypeClass = 'info';
+        } else {
+            recordTypeBadge = '德育分记录';
+            recordTypeClass = 'success';
+        }
+        
+        // 构建额外信息（用于集体申请）
+        let extraInfo = '';
+        if (app.type === 'group' && app.groupAppDetails) {
+            const ga = app.groupAppDetails;
+            extraInfo = `
+                <div class="mt-2 p-2 bg-light border-left border-info" style="border-left-width: 3px !important;">
+                    <p class="mb-1 text-muted" style="font-size: 0.9rem;">
+                        <i class="fas fa-user-tie"></i> <strong>提交教师：</strong>${ga.teacher_name || '未知'}
+                    </p>
+                    ${ga.description ? `
+                        <p class="mb-1 text-muted" style="font-size: 0.9rem;">
+                            <strong>申请说明：</strong>${ga.description}
+                        </p>
+                    ` : ''}
+                    ${ga.review_comment ? `
+                        <p class="mb-1 text-info" style="font-size: 0.9rem;">
+                            <strong>审核意见：</strong>${ga.review_comment}
+                        </p>
+                    ` : ''}
+                    ${ga.evidence ? `
+                        <p class="mb-0">
+                            <a href="/api/download/${ga.evidence}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                <i class="fas fa-download"></i> 查看证明材料
+                            </a>
+                        </p>
+                    ` : ''}
+                </div>
+            `;
+        }
         
         return `
             <div class="card mb-3">
@@ -129,17 +194,31 @@ function displayApplications(applications) {
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
                             <div class="d-flex align-items-center mb-2">
-                                <h6 class="card-title mb-0">${app.title || app.description}</h6>
-                                <span class="badge badge-${recordTypeClass} ml-2">${recordType}</span>
+                                <h6 class="card-title mb-0">
+                                    ${app.type === 'group' ? '<i class="fas fa-users mr-1"></i>' : ''}
+                                    ${app.title || app.description}
+                                </h6>
+                                <span class="badge badge-${recordTypeClass} ml-2">${recordTypeBadge}</span>
                             </div>
                             <p class="card-text text-muted mb-2">
                                 <strong>分数：</strong>${app.score}分 | 
-                                ${app.type === 'score' ? `<strong>来源：</strong>${app.source || '未填写'} | ` : ''}
                                 <strong>时间：</strong>${new Date(app.created_at).toLocaleString()}
                                 ${app.academic_year ? ` | <strong>学年：</strong>${app.academic_year}` : ''}
                             </p>
-                            ${app.description && app.description !== (app.title || '') ? `<p class="card-text text-muted"><strong>详细描述：</strong>${app.description}</p>` : ''}
-                            ${app.review_comment ? `<p class="card-text"><strong>审核意见：</strong>${app.review_comment}</p>` : ''}
+                            ${app.type === 'application' && app.description && app.description !== (app.title || '') ? `
+                                <p class="card-text text-muted"><strong>详细描述：</strong>${app.description}</p>
+                            ` : ''}
+                            ${app.type === 'application' && app.review_comment ? `
+                                <p class="card-text text-info"><strong>审核意见：</strong>${app.review_comment}</p>
+                            ` : ''}
+                            ${app.type === 'application' && app.evidence ? `
+                                <p>
+                                    <a href="/api/download/${app.evidence}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                        <i class="fas fa-download"></i> 查看证明材料
+                                    </a>
+                                </p>
+                            ` : ''}
+                            ${extraInfo}
                         </div>
                         <div class="ml-3">
                             <span class="badge badge-${statusClass}">${statusBadge}</span>
