@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, url_for, session, flash, send_file
-from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -23,7 +22,7 @@ os.makedirs(INSTANCE_DIR, exist_ok=True)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + DB_PATH.replace('\\', '/')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 # PythonAnywhere 静态文件配置
 app.static_folder = 'static'
@@ -39,7 +38,6 @@ print(f"上传目录: {app.config['UPLOAD_FOLDER']}")
 
 # 初始化扩展
 db = SQLAlchemy(app)
-CORS(app)
 
 # 数据库模型
 class User(db.Model):
@@ -492,7 +490,9 @@ def api_update_application(app_id):
     description = request.form.get('description')
     score = request.form.get('score')
     category_id = request.form.get('category_id')
-    academic_year = request.form.get('academic_year', '2029-2030')  # 默认学年
+    # 从数据库获取当前学年
+    current_year = AcademicYear.query.filter_by(is_current=True).first()
+    academic_year = request.form.get('academic_year', current_year.year_name if current_year else None)
     if 'evidence' in request.files:
         file = request.files['evidence']
         if file and file.filename:
@@ -683,7 +683,9 @@ def api_create_group_application():
 
     category_id = request.form.get('category_id')
     description = request.form.get('description')
-    academic_year = request.form.get('academic_year', '2029-2030')  # 默认学年
+    # 从数据库获取当前学年
+    current_year = AcademicYear.query.filter_by(is_current=True).first()
+    academic_year = request.form.get('academic_year', current_year.year_name if current_year else None)
 
     print(f"请求参数 - category_id: {category_id}, description: {description[:50] if description else None}, evidence_filename: {evidence_filename}")
 
@@ -733,19 +735,13 @@ def api_create_group_application():
         db.session.rollback()
         return jsonify({'message': f'成员名单解析失败: {str(e)}'}), 400
 
-    required_cols = ['学号', '姓名', '分值']  # 必需列：学号、姓名、分值
-    optional_cols = ['班级', '书院', '奖励类别']  # 可选列：班级、书院、奖励类别
+    required_cols = ['学号', '姓名', '分值']
     
     # 检查必需列
     for col in required_cols:
         if col not in df.columns:
             db.session.rollback()
             return jsonify({'message': f'成员名单缺少必需列: {col}'}), 400
-    
-    # 可选列检查（如果有的话）
-    for col in optional_cols:
-        if col not in df.columns:
-            print(f'警告: 成员名单缺少可选列: {col}，将忽略此列')
 
     # 检查Excel文件中是否有重复的学号
     student_ids = df['学号'].astype(str).str.strip()
@@ -757,18 +753,11 @@ def api_create_group_application():
     
     errors = []
     added = 0
-    processed_student_ids = set()  # 用于跟踪已处理的学生ID
     
     for _, row in df.iterrows():
         try:
             student_id = str(row['学号']).strip()
             score_val = int(row['分值'])
-            
-            # 检查是否已经处理过这个学号
-            if student_id in processed_student_ids:
-                errors.append(f'学号重复: {student_id}')
-                continue
-            processed_student_ids.add(student_id)
             
             user = User.query.filter_by(student_id=student_id, role='student').first()
             if not user:
@@ -917,7 +906,9 @@ def api_update_group_application(gid):
         return jsonify({'message': '审核通过后不可修改'}), 400
     title = request.form.get('title')
     description = request.form.get('description')
-    academic_year = request.form.get('academic_year', '2029-2030')  # 默认学年
+    # 从数据库获取当前学年
+    current_year = AcademicYear.query.filter_by(is_current=True).first()
+    academic_year = request.form.get('academic_year', current_year.year_name if current_year else None)
     category_id = request.form.get('category_id')
     if 'evidence' in request.files:
         file = request.files['evidence']
@@ -944,18 +935,12 @@ def api_update_group_application(gid):
             df = pd.read_excel(members_file)
         except Exception as e:
             return jsonify({'message': f'成员名单解析失败: {str(e)}'}), 400
-        required_cols = ['学号', '姓名', '分值']  # 必需列：学号、姓名、分值
-        optional_cols = ['班级', '书院', '奖励类别']  # 可选列：班级、书院、奖励类别
+        required_cols = ['学号', '姓名', '分值']
         
         # 检查必需列
         for col in required_cols:
             if col not in df.columns:
                 return jsonify({'message': f'成员名单缺少必需列: {col}'}), 400
-        
-        # 可选列检查（如果有的话）
-        for col in optional_cols:
-            if col not in df.columns:
-                print(f'警告: 成员名单缺少可选列: {col}，将忽略此列')
         # 清空旧明细
         GroupApplicationMember.query.filter_by(group_application_id=ga.id).delete()
         added = 0
@@ -973,7 +958,7 @@ def api_update_group_application(gid):
                 )
                 db.session.add(member)
                 added += 1
-            except:
+            except Exception:
                 continue
         if added == 0:
             return jsonify({'message': '成员名单为空或无有效成员'}), 400
@@ -1060,8 +1045,9 @@ def api_get_statistics():
     if 'user' not in session or session['user']['role'] != 'admin':
         return jsonify({'message': '需要管理员权限'}), 403
     
-    # 获取默认学年
-    default_academic_year = '2029-2030'
+    # 从数据库获取当前学年
+    current_year = AcademicYear.query.filter_by(is_current=True).first()
+    default_academic_year = current_year.year_name if current_year else None
     
     # 统计个人申请
     total_individual_applications = ScoreApplication.query.count()
@@ -1257,7 +1243,9 @@ def api_get_all_scores():
         return jsonify({'message': '需要管理员权限'}), 403
     
     # 过滤参数
-    academic_year = request.args.get('academic_year', '2029-2030')  # 默认学年
+    # 从数据库获取当前学年作为默认值
+    current_year = AcademicYear.query.filter_by(is_current=True).first()
+    academic_year = request.args.get('academic_year', current_year.year_name if current_year else None)
     college = request.args.get('college')  # 书院筛选
     grade = request.args.get('grade')      # 年级筛选
 
@@ -1282,9 +1270,6 @@ def api_get_all_scores():
     # 按学年筛选
     if academic_year:
         base = base.filter(ScoreRecord.academic_year == academic_year)
-    else:
-        # 如果没有指定学年，则包含所有学年的数据
-        pass
     
     # 按书院筛选
     if college:
@@ -1946,26 +1931,32 @@ def init_db():
         
         print("数据库初始化完成")
 
+# 根据用户角色重定向到对应页面
+def redirect_by_role(user_role):
+    """统一的角色重定向逻辑"""
+    if user_role == 'admin':
+        return redirect(url_for('application_review'))
+    elif user_role == 'teacher':
+        return redirect(url_for('teacher_scores'))
+    else:
+        return redirect(url_for('my_scores'))
+
 # 模板路由
 @app.route('/')
 def index():
     # 检查是否有静态的index.html文件
-    import os
     if os.path.exists('index.html'):
         return send_file('index.html')
     
-    if 'user' in session:
-        # 根据用户角色重定向到不同页面
-        if session['user']['role'] == 'admin':
-            return redirect(url_for('application_review'))
-        elif session['user']['role'] == 'teacher':
-            return redirect(url_for('teacher_scores'))
-        else:
-            return redirect(url_for('my_scores'))
+    # 统一重定向到登录页面，让login处理已登录用户
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # 如果已登录，直接重定向到对应角色页面
+    if 'user' in session:
+        return redirect_by_role(session['user']['role'])
+    
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -1995,13 +1986,7 @@ def login():
         if user and password_matches(user):
             session['user'] = user.to_dict()
             flash('登录成功！', 'success')
-            # 根据用户角色重定向到不同页面
-            if user.role == 'admin':
-                return redirect(url_for('application_review'))
-            elif user.role == 'teacher':
-                return redirect(url_for('teacher_scores'))
-            else:
-                return redirect(url_for('my_scores'))
+            return redirect_by_role(user.role)
         else:
             flash('学号/工号或密码错误', 'error')
     

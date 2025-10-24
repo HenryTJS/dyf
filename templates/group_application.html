@@ -8,7 +8,7 @@
         <div class="card">
             <div class="card-header">
                 <h4>发起集体申请</h4>
-                <small class="text-muted">一次仅对应一个项目类别；上传成员Excel，包含学号、姓名、班级、分值</small>
+                <small class="text-muted">一次仅对应一个项目类别；上传成员Excel，包含学号、姓名、分值</small>
             </div>
             <div class="card-body">
                 <form id="group-form">
@@ -39,7 +39,7 @@
                     </div>
                     <div class="mb-3">
                         <div style="display:flex;justify-content:space-between;align-items:center">
-                            <label class="form-label">成员名单，Excel格式：学号、姓名、班级、书院、奖励类别、分值</label>
+                            <label class="form-label">成员名单，Excel格式：学号、姓名、分值</label>
                             <a class="btn btn-sm btn-outline-primary" id="download-template">下载模板</a>
                         </div>
                         <input type="file" class="form-control" id="members" accept=".xlsx,.xls,.csv" required />
@@ -102,7 +102,7 @@ function loadPreSelectedCategory() {
 }
 
 document.getElementById('download-template').addEventListener('click', async () => {
-    const headers = ['学号','姓名','班级','书院','奖励类别','分值'];
+    const headers = ['学号','姓名','分值'];
     const csv = '\ufeff' + headers.join(',') + '\n';
     const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
