@@ -5,21 +5,21 @@ from werkzeug.utils import secure_filename
 import os
 import pandas as pd
 from datetime import datetime, timedelta
-import sqlite3
 import io
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'moral_score_secret_key_2024'
-# 统一使用 instance 目录下的数据库文件
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
-DB_PATH = os.path.join(INSTANCE_DIR, 'moral_score.db')
 
-# 确保instance目录存在
-os.makedirs(INSTANCE_DIR, exist_ok=True)
+# PostgreSQL数据库配置
+# 从环境变量获取数据库配置，如果没有则使用默认值
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_PORT = os.environ.get('DB_PORT', '5432')
+DB_NAME = os.environ.get('DB_NAME', 'moral_score')
+DB_USER = os.environ.get('DB_USER', 'postgres')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', '510297')
 
 # 设置数据库URI
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + DB_PATH.replace('\\', '/')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
@@ -28,8 +28,10 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # 调试信息
-print(f"项目根目录: {BASE_DIR}")
-print(f"数据库路径: {DB_PATH}")
+print(f"数据库主机: {DB_HOST}")
+print(f"数据库端口: {DB_PORT}")
+print(f"数据库名称: {DB_NAME}")
+print(f"数据库用户: {DB_USER}")
 print(f"上传目录: {app.config['UPLOAD_FOLDER']}")
 
 # 初始化扩展
@@ -1775,129 +1777,19 @@ def change_password():
 # 初始化数据库
 def init_db():
     with app.app_context():
-        db.create_all()
-
-        # 结构迁移：确保User表包含employee_id、college、grade且student_id、class_name允许为空；
-        # 确保ScoreApplication包含academic_year列。
         try:
-            # 使用原生SQLite连接检查与迁移
-            db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
-            conn = sqlite3.connect(db_path)
-            cur = conn.cursor()
-
-            # 检查User表列
-            cur.execute("PRAGMA table_info(user)")
-            user_cols = {r[1]: r for r in cur.fetchall()}
-
-            need_rebuild_user = False
-            if 'employee_id' not in user_cols or 'college' not in user_cols or 'grade' not in user_cols or 'teacher_college' not in user_cols:
-                # 简单ADD COLUMN可用
-                if 'employee_id' not in user_cols:
-                    cur.execute("ALTER TABLE user ADD COLUMN employee_id TEXT")
-                if 'college' not in user_cols:
-                    cur.execute("ALTER TABLE user ADD COLUMN college TEXT")
-                if 'grade' not in user_cols:
-                    cur.execute("ALTER TABLE user ADD COLUMN grade TEXT")
-                if 'teacher_college' not in user_cols:
-                    cur.execute("ALTER TABLE user ADD COLUMN teacher_college TEXT")
-                conn.commit()
-                # 重新获取
-                cur.execute("PRAGMA table_info(user)")
-                user_cols = {r[1]: r for r in cur.fetchall()}
-
-            # 如student_id/class_name存在NOT NULL，需要重建以放宽约束
-            if 'student_id' in user_cols and user_cols['student_id'][3] == 1:
-                need_rebuild_user = True
-            if 'class_name' in user_cols and user_cols['class_name'][3] == 1:
-                need_rebuild_user = True
-
-            if need_rebuild_user:
-                cur.execute("BEGIN TRANSACTION")
-                # 创建新表（放宽约束并保持唯一）
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS user_new (
-                        id INTEGER PRIMARY KEY,
-                        username VARCHAR(80) NOT NULL UNIQUE,
-                        password_hash VARCHAR(120) NOT NULL,
-                        name VARCHAR(100) NOT NULL,
-                        student_id VARCHAR(20) UNIQUE,
-                        class_name VARCHAR(50),
-                        college VARCHAR(100),
-                        grade VARCHAR(20),
-                        employee_id VARCHAR(20) UNIQUE,
-                        teacher_college VARCHAR(100),
-                        role VARCHAR(20) DEFAULT 'student',
-                        created_at DATETIME
-                    )
-                    """
-                )
-                # 拷贝数据，若旧表无新列，使用NULL
-                old_cols = ','.join([c for c in ['id','username','password_hash','name','student_id','class_name','college','grade','employee_id','teacher_college','role','created_at'] if c in user_cols])
-                new_cols = ','.join([c for c in ['id','username','password_hash','name','student_id','class_name','college','grade','employee_id','teacher_college','role','created_at'] if c in user_cols])
-                cur.execute(f"INSERT INTO user_new ({new_cols}) SELECT {old_cols} FROM user")
-                # 重命名替换
-                cur.execute("ALTER TABLE user RENAME TO user_backup")
-                cur.execute("ALTER TABLE user_new RENAME TO user")
-                conn.commit()
-
-            # 检查ScoreApplication表列，新增academic_year
-            cur.execute("PRAGMA table_info(score_application)")
-            app_cols = {r[1]: r for r in cur.fetchall()}
-            if 'academic_year' not in app_cols:
-                cur.execute("ALTER TABLE score_application ADD COLUMN academic_year VARCHAR(20)")
-                conn.commit()
+            # 测试连接
+            with db.engine.connect() as conn:
+                conn.execute(db.text('SELECT 1'))
+            print("✅ PostgreSQL连接测试成功")
             
-            # 检查ScoreRecord表列，新增academic_year
-            cur.execute("PRAGMA table_info(score_record)")
-            record_cols = {r[1]: r for r in cur.fetchall()}
-            if 'academic_year' not in record_cols:
-                cur.execute("ALTER TABLE score_record ADD COLUMN academic_year VARCHAR(20)")
-                conn.commit()
-            
-            # 修改category_id字段为可空（用于初始德育分）
-            if 'category_id' in record_cols and record_cols['category_id'][3] == 1:  # 如果当前是NOT NULL
-                cur.execute("BEGIN TRANSACTION")
-                cur.execute("""
-                    CREATE TABLE score_record_new (
-                        id INTEGER PRIMARY KEY,
-                        user_id INTEGER NOT NULL,
-                        category_id INTEGER,
-                        score INTEGER NOT NULL,
-                        source VARCHAR(100) NOT NULL,
-                        description TEXT,
-                        academic_year VARCHAR(20) NOT NULL,
-                        created_at DATETIME,
-                        application_id INTEGER,
-                        group_application_id INTEGER,
-                        FOREIGN KEY (user_id) REFERENCES user (id),
-                        FOREIGN KEY (category_id) REFERENCES score_category (id)
-                    )
-                """)
-                # 复制数据
-                cur.execute("""
-                    INSERT INTO score_record_new 
-                    (id, user_id, category_id, score, source, description, academic_year, created_at, application_id, group_application_id)
-                    SELECT id, user_id, category_id, score, source, description, academic_year, created_at, application_id, group_application_id
-                    FROM score_record
-                """)
-                cur.execute("DROP TABLE score_record")
-                cur.execute("ALTER TABLE score_record_new RENAME TO score_record")
-                conn.commit()
-            
-            # 检查GroupApplication表列
-            cur.execute("PRAGMA table_info(group_application)")
-            group_cols = {r[1]: r for r in cur.fetchall()}
-            if 'academic_year' not in group_cols:
-                cur.execute("ALTER TABLE group_application ADD COLUMN academic_year VARCHAR(20)")
-                conn.commit()
-
-            conn.close()
-        except Exception as mig_e:
-            print(f"数据库结构迁移警告: {mig_e}")
-
-        
-        print("数据库初始化完成")
+            # 创建所有表
+            db.create_all()
+            print("✅ PostgreSQL数据库初始化完成")
+        except Exception as e:
+            print(f"❌ 数据库初始化错误: {e}")
+            print(f"连接字符串: {app.config['SQLALCHEMY_DATABASE_URI']}")
+            raise
 
 # 根据用户角色重定向到对应页面
 def redirect_by_role(user_role):
