@@ -10,29 +10,16 @@ import io
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'moral_score_secret_key_2024'
 
-# PostgreSQL数据库配置
-# 从环境变量获取数据库配置，如果没有则使用默认值
-DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_PORT = os.environ.get('DB_PORT', '5432')
-DB_NAME = os.environ.get('DB_NAME', 'moral_score')
-DB_USER = os.environ.get('DB_USER', 'postgres')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', '510297')
-
-# 设置数据库URI
-app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+# SQLite数据库配置
+basedir = os.path.abspath(os.path.dirname(__file__))
+# 使用Flask标准的instance文件夹存储数据库
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'instance', 'moral_score.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# 调试信息
-print(f"数据库主机: {DB_HOST}")
-print(f"数据库端口: {DB_PORT}")
-print(f"数据库名称: {DB_NAME}")
-print(f"数据库用户: {DB_USER}")
-print(f"上传目录: {app.config['UPLOAD_FOLDER']}")
 
 # 初始化扩展
 db = SQLAlchemy(app)
@@ -1778,17 +1765,11 @@ def change_password():
 def init_db():
     with app.app_context():
         try:
-            # 测试连接
-            with db.engine.connect() as conn:
-                conn.execute(db.text('SELECT 1'))
-            print("✅ PostgreSQL连接测试成功")
-            
             # 创建所有表
             db.create_all()
-            print("✅ PostgreSQL数据库初始化完成")
+            print("✅ SQLite数据库初始化完成")
         except Exception as e:
             print(f"❌ 数据库初始化错误: {e}")
-            print(f"连接字符串: {app.config['SQLALCHEMY_DATABASE_URI']}")
             raise
 
 # 根据用户角色重定向到对应页面

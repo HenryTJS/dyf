@@ -59,7 +59,7 @@
 │   ├── teacher_scores.html             # 教师端管理
 │   └── statistics.html                 # 统计和排行榜
 ├── instance/                           # 实例数据（SQLite备份）
-│   └── moral_score.db                  # SQLite数据库（已迁移到PostgreSQL）
+│   └── moral_score.db                  # SQLite数据库
 └── uploads/                            # 上传文件存储
 ```
 
@@ -69,7 +69,6 @@
 
 - Python 3.7+
 - pip
-- PostgreSQL 12+
 
 ### 1. 克隆项目
 
@@ -84,68 +83,7 @@ cd dyf
 pip install -r requirements.txt
 ```
 
-### 3. 配置PostgreSQL数据库
-
-#### 3.1 安装PostgreSQL
-
-**Windows:**
-```bash
-# 下载并安装PostgreSQL
-# https://www.postgresql.org/download/windows/
-```
-
-**macOS:**
-```bash
-brew install postgresql
-brew services start postgresql
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install postgresql postgresql-contrib
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-```
-
-#### 3.2 创建数据库
-
-```bash
-# 切换到postgres用户
-sudo -u postgres psql
-
-# 创建数据库
-CREATE DATABASE moral_score;
-\q
-```
-
-#### 3.3 配置环境变量
-
-复制环境变量模板并修改：
-
-```bash
-# 复制配置模板
-cp env.example .env
-
-# 编辑 .env 文件，修改数据库配置
-# DB_HOST=localhost
-# DB_PORT=5432
-# DB_NAME=moral_score
-# DB_USER=postgres
-# DB_PASSWORD=your_password
-```
-
-或者直接设置环境变量：
-
-```bash
-# Windows (PowerShell)
-$env:DB_PASSWORD="your_password"
-
-# Linux/macOS
-export DB_PASSWORD="your_password"
-```
-
-### 4. 运行应用
+### 3. 运行应用
 
 ```bash
 python app.py
@@ -153,7 +91,7 @@ python app.py
 
 应用将在 `http://localhost:5000` 启动
 
-### 5. 默认账户
+### 4. 默认账户
 
 首次启动时，系统会自动初始化数据库并创建默认账户（在 `init_db()` 函数中配置）
 
@@ -163,8 +101,7 @@ python app.py
 
 - **后端框架**：Flask 2.x
 - **ORM**：SQLAlchemy
-- **数据库**：PostgreSQL 12+ (已从SQLite迁移)
-- **数据库驱动**：psycopg2-binary
+- **数据库**：SQLite (轻量级，零配置)
 - **前端**：HTML5, CSS3, JavaScript (原生)
 - **UI框架**：Bootstrap 4
 - **图标库**：Font Awesome 5
@@ -267,11 +204,7 @@ python app.py
 - ✅ 移除 PythonAnywhere 部署配置
 - ✅ 清理不必要的静态文件夹配置
 
-### v2.0 - 数据库迁移
-- ✅ 从SQLite迁移到PostgreSQL
-- ✅ 数据完整迁移（515用户，1133条记录）
-- ✅ 清理迁移脚本和临时文件
-- ✅ 更新文档和配置
+
 
 ## 🏗️ 架构设计
 
