@@ -37,11 +37,13 @@
 ```text
 ├── app.py                              # Flask应用主文件
 ├── requirements.txt                    # Python依赖
-├── env.example                         # 环境变量配置模板
 ├── static/                             # 静态文件
 │   ├── css/
+│   │   ├── bootstrap.min.css           # Bootstrap 5 样式
+│   │   ├── all.min.css                 # Font Awesome 6 样式
 │   │   └── style.css                   # 全局样式
 │   └── js/                             # JavaScript文件
+│       └── bootstrap.bundle.min.js     # Bootstrap 5 脚本（含 Popper）
 ├── templates/                          # HTML模板
 │   ├── base.html                       # 基础模板（含导航）
 │   ├── login.html                      # 登录页面
@@ -67,7 +69,7 @@
 
 ### 环境要求
 
-- Python 3.7+
+- Python 3.9
 - pip
 
 ### 1. 克隆项目
@@ -99,14 +101,15 @@ python app.py
 
 ## 🛠️ 技术栈
 
-- **后端框架**：Flask 2.x
+- **后端框架**：Flask 2.3.3
 - **ORM**：SQLAlchemy
 - **数据库**：SQLite (轻量级，零配置)
 - **前端**：HTML5, CSS3, JavaScript (原生)
-- **UI框架**：Bootstrap 4
-- **图标库**：Font Awesome 5
+- **UI框架**：Bootstrap 5
+- **图标库**：Font Awesome 6
 - **数据处理**：pandas, openpyxl
 - **文件上传**：Werkzeug
+ - **Excel 导出**：xlsxwriter
 
 ## 📊 数据库模型
 
